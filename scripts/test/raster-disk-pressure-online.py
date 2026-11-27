@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -19,6 +20,7 @@ capacity = importlib.import_module('scripts.test.raster-nibble-capacity-online')
 scan_ids = importlib.import_module('scripts.test.vector-pmtiles-workflow-online').scan_ids
 SuiteError, obj = raster.SuiteError, raster.obj
 SUITE = fixture.SUITE
+CLEANUP_RESERVE_SECONDS = 45
 
 
 def definition(source, parent, op, stage):
@@ -34,7 +36,7 @@ def definition(source, parent, op, stage):
                     'write_mode': 'create', 'profile': 'cog', 'blocksize': 4096}}]}
 
 
-def tool(repository, env, action, *names):
+def tool(repository, env, action, *names, timeout):
     p = subprocess.run([sys.executable, 'business/scripts/online-raster-disk-pressure-fixture.py', action, *names],
                        cwd=repository, env=dict(env), capture_output=True, text=True, timeout=150)
     if p.returncode:
@@ -124,42 +126,83 @@ def source_edges(client, source_id):
                   if v.get('status') == 'active' and v.get('relation_kind') == 'derive')
 
 
-def run_scenario(repository, env, client, operate=tool):
-    deadline = time.monotonic()+float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
+def run_scenario(repository, env, client, operate=tool, *, hard_deadline,
+                 source_preparer=None, metadata_factory=None):
+    if (env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS') != '600' or not math.isfinite(hard_deadline)
+            or not 0 < hard_deadline - time.monotonic() <= 600):
+        raise SuiteError('disk pressure requires the current 600-second Online gate deadline')
+    # Load the Hosted evidence helpers after exporting the shared language client.
+    hillshade = importlib.import_module('scripts.test.raster-hillshade-orthogonal-persistence-online')
+    if source_preparer is None:
+        source_preparer = hillshade.source_scan_client
+    if metadata_factory is None:
+        pressure_fixture = fixture
+
+        class DiskPressureMetadata(hillshade.ViewshedMetadata):
+            prefix = pressure_fixture.PREFIX
+            suite = SUITE
+            fixture = pressure_fixture
+
+        metadata_factory = DiskPressureMetadata
+    deadline = hard_deadline - CLEANUP_RESERVE_SECONDS
+
     def remaining():
-        value = deadline-time.monotonic()
-        if value <= 0: raise SuiteError('disk pressure business budget exceeded')
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise SuiteError('disk pressure business budget exceeded')
         return value
-    tenant = raster.positive(int(env['ADDP_ONLINE_TEST_TENANT_ID']), 'tenant')
-    if tenant <= 1: raise SuiteError('pressure acceptance forbids default tenant')
-    identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
-    engine = raster.positive(int(env['ADDP_ONLINE_DISK_PRESSURE_NFS_ENGINE_ID']), 'NFS engine')
-    source = f'addp://engine/{engine}/path/{fixture.SOURCE}?type=file'
-    scan = raster.support.wait_for_meta_scan(client, engine, deadline, scope={'targets': [source]})
-    item = raster.support.find_fixture_item(client, engine, fixture.SOURCE, 'pressure source')
-    original = client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload
-    source += f'&item_id={item["id"]}'
-    engines = raster.array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'engines')
-    selected = [v for v in engines if v.get('engine_type') == 'geopython_workflow' and v.get('connection_status') == 'online']
-    if len(selected) != 1: raise SuiteError('expected one online product Runtime')
-    runtime = raster.positive(selected[0]['id'], 'Runtime engine')
-    runtime_identity = operate(repository, env, 'runtime-identity')
-    parent = f'addp://engine/{engine}/path/outputs?type=directory'
-    cases, failures, names, scans, previous = [], [], [], [scan], {}
-    observations = []
+
+    client = hillshade.view.BudgetClient(client, remaining)
+    producer_env = {key: value for key, value in env.items() if key != 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
+
+    def run_fixture(action, *names):
+        return operate(repository, producer_env, action, *names, timeout=remaining())
+
+    metadata = None
+    primary = None
     try:
+        tenant = raster.positive(int(env['ADDP_ONLINE_TEST_TENANT_ID']), 'tenant')
+        if tenant <= 1:
+            raise SuiteError('pressure acceptance forbids default tenant')
+        identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
+        engine = raster.positive(int(env['ADDP_ONLINE_DISK_PRESSURE_NFS_ENGINE_ID']), 'NFS engine')
+        source = f'addp://engine/{engine}/path/{fixture.SOURCE}?type=file'
+        initializer, source_identity = source_preparer(env, client, identity, remaining)
+        scan = raster.support.wait_for_meta_scan(initializer, engine, deadline, scope={'targets': [source]})
+        scanned_source = raster.wait_execution(initializer, 'meta', scan, remaining())
+        source_scan_identity = capacity.validate_scan(scanned_source, scan, None, tenant, int(source_identity['principal_id']), engine)
+        directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])
+        hillshade.view.immutable(directory/'meta-source-scan.json', hillshade.encoded(scanned_source))
+        hillshade.check_scan_inventory(client, initializer, scan, [])
+        metadata = metadata_factory(env, client, engine, identity, scan, remaining,
+                                    grant_remaining=lambda: hard_deadline - time.monotonic())
+        item = metadata.find(fixture.SOURCE)
+        original = metadata.snapshot(item['id'])
+        source += f'&item_id={item["id"]}'
+        engines = raster.array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'engines')
+        selected = [v for v in engines if v.get('engine_type') == 'geopython_workflow' and v.get('connection_status') == 'online']
+        if len(selected) != 1:
+            raise SuiteError('expected one online product Runtime')
+        runtime = raster.positive(selected[0]['id'], 'Runtime engine')
+        runtime_identity = run_fixture('runtime-identity')
+        parent = f'addp://engine/{engine}/path/outputs?type=directory'
+        cases, failures, names, scans, previous = [], [], [], [], {}
+        observations, target_metadata = [], {}
         for op in ('nibble', 'proximity'):
             for stage in ('baseline', 'distance', 'encoding', 'recovered'):
                 remaining()
                 phase = stage if stage in ('distance', 'encoding') else 'release'
-                observation = operate(repository, env, phase); observations.append(observation)
+                observation = run_fixture(phase); observations.append(observation)
                 old_scans, old_edges = scan_ids(client), source_edges(client, item['id'])
                 language = 'zh-cn' if op == 'nibble' else 'en'
                 workflow = definition(source, parent, op, stage)
                 workflow_hash = hashlib.sha256(json.dumps(workflow, sort_keys=True).encode()).hexdigest()
-                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, workflow)
+                identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, workflow,
+                                           execution_timeout=min(180, max(1, int(remaining()))))
                 failure = stage in ('distance', 'encoding')
-                execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed' if failure else 'success')
+                status = 'failed' if failure else 'success'
+                execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected=status)
+                metadata.execution(identifier, workflow, runtime, language, status)
                 name = workflow['tasks'][-1]['params']['target_name']; target = parent.replace('?type=directory', '/'+name+'?type=file')
                 if failure:
                     verify_failed_observation(execution, identifier, language)
@@ -175,22 +218,23 @@ def run_scenario(repository, env, client, operate=tool):
                                      'no_publication_or_scan_or_lineage': True, 'workflow_sha256': workflow_hash, 'target_locator': target})
                 else:
                     facts, output_scan = raster.validate_success(execution, [source], target, 'create', fixture.expectation(), resource_type='file')
-                    if output_scan in scans: raise SuiteError('automatic scans must be distinct')
+                    if output_scan == scan or output_scan in scans: raise SuiteError('automatic scans must be distinct')
                     scanned = raster.wait_execution(client, 'meta', output_scan, remaining())
                     scan_fact = capacity.validate_scan(scanned, output_scan, identifier, tenant, int(identity['principal_id']), engine)
                     monitor = obj(client.request('GET', '/api/v1/monitor/executions/by-execution-id/'+identifier, (200,)).payload, 'Monitor')
                     if monitor.get('status') != 'success' or monitor.get('module') != 'develop' or monitor.get('metadata', {}).get('lineage_facts') != facts:
                         raise SuiteError('Monitor status/owner/facts differ')
                     scans.append(output_scan); names.append(name)
-                native = operate(repository, env, 'verify', *names)
+                native = run_fixture('verify', *names)
                 rasterize.check_physical(native, previous)
                 if failure:
                     catalog = client.request('GET', f'/api/v1/meta/engines/{engine}/items', (200,)).payload
                     if any(v.get('full_name') == 'outputs/'+name for v in raster.array(catalog, 'catalog items')):
                         raise SuiteError('rejected target registered in Meta')
                 else:
-                    target_item = raster.support.find_fixture_item(client, engine, 'outputs/'+name, 'pressure COG')
-                    detail = obj(client.request('GET', f'/api/v1/meta/items/{target_item["id"]}', (200,)).payload, 'target')
+                    target_item = metadata.find('outputs/'+name, binding={'execution': identifier, 'scan': output_scan, 'locator': target})
+                    detail = metadata.snapshot(target_item['id'])
+                    target_metadata[name] = detail
                     validate_target(detail, fixture.expectation(), native['targets'][name])
                     sizes = raster.strict_sizes(execution['metadata']['result']['final_result'], native['targets'][name], detail, name)
                     lineage = raster.wait_lineage(client, item['id'], detail['id'], identifier, remaining())
@@ -199,30 +243,53 @@ def run_scenario(repository, env, client, operate=tool):
                                   'physical': native['targets'][name], 'lineage': lineage, 'monitor_verified': True,
                                   'workflow_sha256': workflow_hash, 'target_locator': target})
                 previous = native['targets'].copy()
-                if operate(repository, env, 'runtime-identity') != runtime_identity:
+                if run_fixture('runtime-identity') != runtime_identity:
                     raise SuiteError('product Runtime or master/worker restarted')
                 remaining()
-        if scan_ids(client) != sorted(scans) or len(cases) != 4 or len(failures) != 4:
+        hillshade.check_scan_inventory(client, initializer, scan, scans)
+        if len(cases) != 4 or len(failures) != 4:
             raise SuiteError('pressure inventory differs from eight executions')
         for op in ('nibble', 'proximity'):
             rejected = next(v for v in failures if v['operator'] == op and v['phase'] == 'raster encoding')
             recovered = next(v for v in cases if v['name'] == op+'-recovered.cog.tif')
             if any(rejected[k] != recovered[k] for k in ('workflow_sha256', 'target_locator')):
                 raise SuiteError('recovery is not a fresh execution of the exact rejected workflow/target')
-        if client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload != original:
+        if metadata.snapshot(item['id']) != original:
             raise SuiteError('source metadata changed')
-        return {'schema_version': 'addp.raster-disk-pressure/v1', 'suite': SUITE, 'result': 'passed',
-                'identity': identity, 'source': source, 'source_scan_execution_id': scan, 'source_unchanged': True,
+        for case in cases:
+            prior = target_metadata[case['name']]
+            if metadata.snapshot(prior['id']) != prior:
+                raise SuiteError('previous target metadata changed')
+        if len(metadata.report['issued']) != len(cases) + 1:
+            raise SuiteError('expected one exact expiring source Grant and four exact expiring result Grants')
+        report = {'schema_version': 'addp.raster-disk-pressure/v1', 'suite': SUITE, 'result': 'passed',
+                'identity': identity, 'source': source, 'source_scan_execution_id': scan,
+                'source_preparation_identity': source_identity, 'source_scan_identity': source_scan_identity,
+                'source_unchanged': True, 'metadata_evidence': metadata.path.name,
                 'previous_artifacts_unchanged': True, 'runtime_identity': runtime_identity,
                 'observations': observations, 'cases': cases, 'failures': failures, 'physical': native,
                 'coverage': 'API low-disk rejection and recovery; no concurrent race or unreadable-capacity Hosted claim'}
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        # The lifecycle unmounts even if release fails; never mask the business failure.
-        failure = sys.exc_info()[1]
-        try: operate(repository, env, 'release')
+        deadline = hard_deadline - 1
+        errors = []
+        if metadata is not None:
+            try:
+                metadata.cleanup()
+            except Exception as error:
+                errors.append('metadata Grant cleanup failed: ' + type(error).__name__)
+        try:
+            run_fixture('release')
         except Exception as error:
-            if failure is None: raise
-            raise SuiteError(f'{failure}; pressure release also failed: {error}') from failure
+            errors.append('pressure release failed: ' + type(error).__name__)
+        if errors:
+            message = '; '.join(errors)
+            raise SuiteError(f'{primary}; {message}' if primary is not None else message) from primary
+    remaining()
+    report['metadata_cleanup'] = metadata.report['cleanup']
+    return report
 
 
 def validate_target(detail, expectation, physical):
@@ -233,7 +300,8 @@ def validate_target(detail, expectation, physical):
 def main():
     env = dict(os.environ)
     result = run_scenario(Path(__file__).resolve().parents[2], env,
-        raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30))
+        raster.GatewayClient(env['GATEWAY_URL'], env['ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'], 30),
+        hard_deadline=float(env['ADDP_ONLINE_DISK_PRESSURE_DEADLINE']))
     (Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'disk-pressure.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 

@@ -19,6 +19,12 @@ class HostedDiskPressureGateTest(base.HostedContourGateTest):
         script.write_text(text)
         docker = self.host.bin/'docker'
         docker.write_text(docker.read_text().replace('raster-disk-pressure-persistence', 'raster-disk-pressure'))
+        self.host._write_repository_script('scripts/utils/online_raster_lineage.py', '''
+            import os, sys
+            assert sys.argv[1:] == ['prepare']
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream:
+                stream.write('disk-pressure:prepare-observer\\n')
+        ''')
         subprocess.run(['git', 'add', '.'], cwd=self.host.repository, check=True)
         subprocess.run(['git', 'commit', '-qm', 'pressure fixture stub'], cwd=self.host.repository, check=True)
 
@@ -30,10 +36,11 @@ class HostedDiskPressureGateTest(base.HostedContourGateTest):
         result = self.run_gate()
         self.assertEqual(result.returncode, 0, result.stderr+result.stdout)
         trace = self.host.trace.read_text()
-        for step in ('disk-pressure:start', 'disk-pressure:seed', '--suite raster-workflow',
-                     '--wait-protection-owners develop,manager', 'make:test-online ONLINE_SUITE=raster-disk-pressure',
-                     'disk-pressure:stop', 'infra-down'):
-            self.assertIn(step, trace)
+        steps = ('disk-pressure:prepare-observer', 'disk-pressure:start', 'disk-pressure:seed', '--suite raster-disk-pressure',
+                 'make:test-online ONLINE_SUITE=raster-disk-pressure', 'disk-pressure:stop', 'infra-down')
+        positions = [trace.index(step) for step in steps]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn('--wait-protection-owners develop,manager', trace)
         self.assertFalse(self.host.secrets.exists())
         gate = (self.host.repository/'scripts/test/online-hosted-raster-disk-pressure-gate.sh').read_text()
         self.assertIn('TMPDIR=/raster-pressure-tmp', gate)

@@ -3,11 +3,13 @@ import importlib
 import json
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 
 m = importlib.import_module('scripts.test.raster-disk-pressure-online')
-ENV = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_DISK_PRESSURE_NFS_ENGINE_ID': '3'}
+ENV = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_DISK_PRESSURE_NFS_ENGINE_ID': '3',
+       'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': '600', 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'isolated-test-preparer'}
 
 
 class Client:
@@ -15,7 +17,8 @@ class Client:
 
     def __init__(self, log_path):
         self.log_path = log_path
-        self.executions = {}; self.targets = {}; self.scans = ['source-scan']; self.headers = []; self.pressure_phase = None; self.parents = {}; self.proofs = {}
+        self.workflows = {}
+        self.executions = {}; self.targets = {}; self.scans = []; self.headers = []; self.pressure_phase = None; self.parents = {}; self.proofs = {}
         self.source = {'id': 1, 'item_type': 'file', 'full_name': m.fixture.SOURCE, 'fingerprint': 'source-fingerprint', 'size_bytes': 1200}
 
     def edge(self, name, item):
@@ -28,7 +31,6 @@ class Client:
             data = {'principal': {'id': 33, 'type': 'user'}, 'context': {'type': 'tenant', 'tenant_id': '2'},
                     'token': {'type': 'first_party_access_token'}, 'authorization': {'role_assignments': [
                         {'role_key': 'raster-consumer', 'permissions': sorted(m.raster.EDITOR_PERMISSIONS)}]}}
-        elif path.endswith('/scan/run/manual'): data = {'execution_id': 'source-scan'}
         elif path.endswith('/workflow-engines'): data = [{'id': 7, 'engine_type': 'geopython_workflow', 'connection_status': 'online'}]
         elif method == 'POST' and path.endswith('/develop/executions'):
             tasks = body['content']['workflow_definition']['tasks']; name = tasks[-1]['params']['target_name']; identifier = f'exec-{len(self.executions)+1}-{name}'
@@ -38,7 +40,7 @@ class Client:
                 required = 32*1024**2 if phase == 'distance' else 2*(2*(4096**2*9+64)+8*1024**2)
                 language = headers['Accept-Language']
                 stage = 'distance transform' if phase == 'distance' else 'raster encoding'
-                if self.fault == 'phase': stage = 'nibble output'
+                if self.fault in ('phase', 'phase-and-cleanup'): stage = 'nibble output'
                 task = 'compute' if phase == 'distance' else 'save'
                 if self.fault == 'task': task = 'source'
                 text = (f'栅格临时磁盘空间不足（阶段：{stage}）：' if language == 'zh-cn' or self.fault == 'language'
@@ -70,6 +72,7 @@ class Client:
                             'meta_scan_runs': [{'execution_id': scan, 'target_locator': target, 'status': 'submitted'}]}}}
                 if self.fault == 'size': artifact['size_bytes'] = 2001
             self.executions[identifier] = data
+            self.workflows[identifier] = (body['content']['workflow_definition'], headers['Accept-Language'])
             data = {'execution_id': identifier}
         elif '/develop/executions/' in path:
             data = self.executions[path.rsplit('/', 1)[-1]]
@@ -77,7 +80,7 @@ class Client:
                 data = {**data, 'error_details': {'category': 'unknown'}}
         elif '/meta/executions/' in path:
             scan = path.rsplit('/', 1)[-1]; name = scan.removeprefix('scan-')
-            data = {'status': 'success', 'execution_id': scan, 'module': 'meta', 'task_type': 'scan', 'parent_execution_id': self.parents.get(scan, 'source-exec'),
+            data = {'status': 'success', 'execution_id': scan, 'module': 'meta', 'task_type': 'scan', 'parent_execution_id': self.parents[scan],
                     'tenant_id': 2, 'triggered_by': 34 if self.fault == 'actor' else 33, 'scan_context': {'engine_id': 3}}
         elif '/monitor/executions/' in path: data = {'module': 'develop', **self.executions[path.rsplit('/', 1)[-1]]}
         elif path.endswith('/engines/3/items'): data = [self.source, *self.targets.values()]
@@ -90,8 +93,72 @@ class Client:
         return SimpleNamespace(payload=copy.deepcopy(data))
 
 
+class Initializer:
+    def __init__(self, client):
+        self.business = client
+        self.targets = []
+        self.scans = []
+
+    def request(self, method, path, expected, body=None, headers=None):
+        if method == 'POST' and path == '/api/v1/meta/scan/run/manual':
+            assert body['engine_id'] == 3 and not self.scans
+            self.targets = body['targets']
+            self.scans.append('source-scan')
+            return SimpleNamespace(payload={'execution_id': 'source-scan'})
+        if method == 'GET' and path == '/api/v1/meta/executions/source-scan':
+            return SimpleNamespace(payload={'execution_id': 'source-scan', 'module': 'meta', 'task_type': 'scan',
+                'status': 'success', 'tenant_id': 2, 'triggered_by': 33 if self.business.fault == 'source-actor' else 81,
+                'scan_context': {'engine_id': 3}})
+        if method == 'GET' and path.startswith('/api/v1/meta/scan/runs?'):
+            return SimpleNamespace(payload={'total': len(self.scans), 'items': [{'execution_id': s} for s in self.scans]})
+        raise AssertionError('preparer attempted a business request: '+path)
+
+
+class Metadata:
+    def __init__(self, case, env, client, engine, identity, scan, remaining, *, grant_remaining):
+        self.business = case.client
+        self.actions = case.actions
+        self.path = Path(env['ADDP_ONLINE_ARTIFACT_DIR'])/'disk-pressure-metadata.json'
+        self.report = {'issued': [], 'cleanup': 'pending'}
+        self.pending = {}
+        self.executions = []
+        assert engine == 3 and identity['principal_id'] == '33' and scan == 'source-scan'
+        assert 0 < remaining() < grant_remaining() <= 600
+
+    def find(self, name, binding=None):
+        if binding is None:
+            assert name == m.fixture.SOURCE
+            item = self.business.source
+        else:
+            assert name.removeprefix('outputs/') in m.fixture.TARGETS
+            basename = name.removeprefix('outputs/')
+            item = self.business.targets[basename]
+            assert binding['execution'] == self.business.parents[binding['scan']] == self.business.proofs[basename]
+            assert binding['locator'] == f'addp://engine/3/path/{name}?type=file'
+        self.pending[item['id']] = item
+        self.report['issued'].append(name)
+        return item
+
+    def snapshot(self, identifier):
+        return self.pending[identifier]
+
+    def execution(self, identifier, workflow, runtime, language, status):
+        assert runtime == 7 and self.business.executions[identifier]['status'] == status
+        assert self.business.workflows[identifier] == (workflow, language)
+        self.executions.append(identifier)
+
+    def cleanup(self):
+        self.actions.append('revoke-and-check-hidden')
+        if self.business.fault in ('cleanup', 'phase-and-cleanup'):
+            raise m.SuiteError('revocation observation differs')
+        self.pending.clear()
+        self.report['cleanup'] = {'grants_revoked': True, 'metadata_hidden': True}
+
+
 class DiskPressureOnlineTest(unittest.TestCase):
-    def operate(self, repository, env, action, *names):
+    def operate(self, repository, env, action, *names, timeout):
+        self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', env)
+        self.assertGreater(timeout, 0)
         self.actions.append(action)
         if action == 'runtime-identity':
             self.snapshots += 1
@@ -109,23 +176,63 @@ class DiskPressureOnlineTest(unittest.TestCase):
         log = directory/'develop'/'test-instance'/'events.jsonl'
         log.parent.mkdir(parents=True)
         client = Client(log)
-        return client, {**ENV, 'ADDP_RUNTIME_LOG_ROOT': str(directory)}
+        self.initializer = Initializer(client)
+        return client, {**ENV, 'ADDP_RUNTIME_LOG_ROOT': str(directory), 'ADDP_ONLINE_ARTIFACT_DIR': str(directory)}
+
+    def source_preparer(self, env, client, identity, remaining):
+        self.assertIs(client.client, self.client)
+        self.assertEqual(identity['principal_id'], '33')
+        return self.initializer, {'principal_id': '81', 'tenant_id': '2'}
+
+    def metadata_factory(self, *args, **kwargs):
+        self.metadata = Metadata(self, *args, **kwargs)
+        return self.metadata
+
+    def run_pressure(self, env, *, budget=600):
+        return m.run_scenario(Path('.'), env, self.client, self.operate,
+                              hard_deadline=time.monotonic()+budget,
+                              source_preparer=self.source_preparer, metadata_factory=self.metadata_factory)
 
     def test_eight_platform_executions_keep_identity_strict_scans_lineage_and_submitted_language(self):
-        client, env = self.new_client(); self.client = client; result = m.run_scenario(Path('.'), env, client, self.operate)
+        client, env = self.new_client(); self.client = client; result = self.run_pressure(env)
         self.assertEqual(result['result'], 'passed'); self.assertEqual(len(result['cases']), 4); self.assertEqual(len(result['failures']), 4)
-        self.assertEqual(len(client.executions), 8); self.assertEqual(len(client.scans), 5)
+        self.assertEqual(len(client.executions), 8); self.assertEqual(len(client.scans), 4)
+        self.assertEqual(self.metadata.executions, list(client.executions))
+        self.assertEqual(self.initializer.targets, ['addp://engine/3/path/classes.tif?type=file'])
+        self.assertEqual(self.initializer.scans, ['source-scan'])
+        self.assertEqual(result['source_scan_identity']['triggered_by'], 81)
+        self.assertEqual(self.metadata.report['issued'], [m.fixture.SOURCE, *('outputs/'+name for name in m.fixture.TARGETS)])
+        self.assertFalse(self.metadata.pending)
+        self.assertEqual(result['metadata_cleanup'], {'grants_revoked': True, 'metadata_hidden': True})
         self.assertEqual({x['language'] for x in result['failures']}, {'zh-cn', 'en'})
         self.assertEqual({x['source'] for x in result['failures']}, {'develop_runtime_log'})
         self.assertEqual(self.actions[-1], 'release')
         self.assertEqual(self.snapshots, 9)
 
     def test_wrong_phase_language_publication_scan_actor_size_and_restart_are_not_accepted(self):
-        for fault in ('phase', 'task', 'language', 'runtime-code', 'reread', 'publish', 'scan', 'actor', 'size', 'restart'):
+        for fault in ('phase', 'task', 'language', 'runtime-code', 'reread', 'publish', 'scan', 'actor', 'size', 'restart', 'source-actor', 'cleanup'):
             self.setUp(); client, env = self.new_client(); client.fault = fault; self.client = client; self.restart = fault == 'restart'
             with self.subTest(fault=fault), self.assertRaises(m.SuiteError):
-                m.run_scenario(Path('.'), env, client, self.operate)
+                self.run_pressure(env)
             self.assertEqual(self.actions[-1], 'release')
+            if fault != 'source-actor':
+                self.assertIn('revoke-and-check-hidden', self.actions)
+
+    def test_primary_failure_is_preserved_when_revocation_also_fails(self):
+        client, env = self.new_client()
+        self.client = client
+        client.fault = 'phase-and-cleanup'
+        with self.assertRaisesRegex(m.SuiteError, 'Runtime diagnostic.*metadata Grant cleanup failed'):
+            self.run_pressure(env)
+        self.assertEqual(self.actions[-2:], ['revoke-and-check-hidden', 'release'])
+
+    def test_gate_deadline_is_required_and_cannot_expand(self):
+        client, env = self.new_client()
+        self.client = client
+        for budget in (float('nan'), -1, 601):
+            with self.subTest(budget=budget), self.assertRaisesRegex(m.SuiteError, '600-second'):
+                self.run_pressure(env, budget=budget)
+        self.assertFalse(self.actions)
 
     def test_no_physical_or_budget_assertion_is_replaced_by_successful_http(self):
         working = 2*(16*(256**2*9+64))+8*1024**2

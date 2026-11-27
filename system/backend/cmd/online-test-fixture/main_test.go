@@ -2220,7 +2220,7 @@ func TestHillshadeOrthogonalPreparationKeepsConsumerTwelveAndSeparateThirteen(t 
 	}
 }
 
-func TestFocalCircleWeightedPreparationKeepsConsumerTwelveAndSeparateThirteen(t *testing.T) {
+func TestRasterHostedSourcePreparationKeepsConsumerTwelveAndSeparateThirteen(t *testing.T) {
 	ordinary, err := suitePermissions("raster-workflow")
 	if err != nil || len(ordinary) != 12 {
 		t.Fatal("missing ordinary raster permissions")
@@ -2228,19 +2228,19 @@ func TestFocalCircleWeightedPreparationKeepsConsumerTwelveAndSeparateThirteen(t 
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	env := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux"}
 	for _, suite := range []string{"raster-focal-circle-weighted-persistence", "raster-focal-circle-persistence",
-		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence"} {
+		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence", "raster-disk-pressure"} {
 		t.Run(suite, func(t *testing.T) {
 			consumer, err := suitePermissions(suite)
 			if err != nil || !slices.Equal(consumer, ordinary) {
-				t.Fatal("focal business permissions differ from the original twelve")
+				t.Fatal("raster business permissions differ from the original twelve")
 			}
 			preparation := suiteSourceInitializerPermissions(suite)
 			if len(preparation) != 13 || !slices.Equal(preparation, want) || rasterBranchLineage(suite) || !needsEngineProvisioner(suite) {
-				t.Fatal("focal preparation requires the existing separate scan and metadata Grant permissions")
+				t.Fatal("raster preparation requires the existing separate scan and metadata Grant permissions")
 			}
 			output := filepath.Join(t.TempDir(), "identity.env")
 			if err := validateExternalEnvironment(append(slices.Clone(env), "ADDP_ONLINE_OWNER_MANAGED=1"), output, suite); err == nil {
-				t.Fatal("focal preparation must be Hosted only")
+				t.Fatal("raster preparation must be Hosted only")
 			}
 			if err := validateExternalEnvironment(append(slices.Clone(env), "ADDP_ONLINE_HOSTED=1"), output, suite); err != nil {
 				t.Fatal(err)

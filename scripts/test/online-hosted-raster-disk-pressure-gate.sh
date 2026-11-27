@@ -44,6 +44,7 @@ run_logged docker tag python:3.11-slim localhost:5001/python:3.11-slim
 run_logged docker push localhost:5001/python:3.11-slim
 infra_owned=1
 hosted_start_platform_infra
+run_logged python3 scripts/utils/online_raster_lineage.py prepare
 run_logged python3 business/scripts/online-raster-disk-pressure-fixture.py start
 DISK_PRESSURE_ROOT=$(cat "$ADDP_ONLINE_SECRET_DIR/disk-pressure-root")
 application_owned=1
@@ -53,8 +54,8 @@ start_online_geopython_runtime "$RUNTIME_TAG" --cpus 4 --memory 2g --memory-swap
   --mount "type=bind,source=$DISK_PRESSURE_ROOT,target=$DISK_PRESSURE_ROOT" \
   --mount "type=bind,source=$DISK_PRESSURE_TMP,target=/raster-pressure-tmp" -e TMPDIR=/raster-pressure-tmp
 run_logged python3 business/scripts/online-raster-disk-pressure-fixture.py seed
-# Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+# Keep the ordinary User's twelve permissions and provision the separate source preparer.
+run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-disk-pressure --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/disk-pressure-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

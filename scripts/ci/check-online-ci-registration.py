@@ -5558,10 +5558,10 @@ WEIGHTED_CIRCLE_REQUIRED = {'scripts/test/online-hosted-raster-focal-circle-weig
               'scripts/test/online-raster-focal-circle-weighted-fixture_test.py',
               'scripts/test/online-hosted-raster-focal-circle-weighted-gate_test.py',
               'test_weighted_circle_requires_exact_cog_matrix_budget_and_regressions',
-              "go test ./cmd/online-test-fixture -run 'FocalCircleWeighted'"),
+              "go test ./cmd/online-test-fixture -run 'RasterHostedSourcePreparation'"),
  'scripts/test/online-gate.py': ('ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE',),
  'system/backend/cmd/online-test-fixture/main_test.go': (
-     'TestFocalCircleWeightedPreparationKeepsConsumerTwelveAndSeparateThirteen',)}
+     'TestRasterHostedSourcePreparationKeepsConsumerTwelveAndSeparateThirteen',)}
 
 
 def validate_raster_focal_circle_weighted(repository: Path, registered: set[str]) -> None:
@@ -7057,7 +7057,8 @@ def validate_raster_disk_pressure_profile(repository: Path, registered: set[str]
         'scripts/test/online-hosted-raster-disk-pressure-gate.sh': (
             'source "$ROOT_DIR/scripts/utils/hosted-online.sh"', 'start_online_geopython_runtime',
             '--cpus 4 --memory 2g --memory-swap 2g', 'TMPDIR=/raster-pressure-tmp',
-            '--suite raster-workflow', '--wait-protection-owners develop,manager',
+            '--suite raster-disk-pressure', '--wait-protection-owners develop,manager',
+            'online_raster_lineage.py prepare', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
             'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-disk-pressure-fixture.py stop'),
         'business/scripts/online-raster-disk-pressure-fixture.py': (
             'NFSExport', 'posix_fallocate', 'mkfs.ext4', 'nodiscard', 'losetup', 'findmnt', 'umount',
@@ -7068,13 +7069,18 @@ def validate_raster_disk_pressure_profile(repository: Path, registered: set[str]
             'SubmittedLanguageClient', 'Accept-Language', 'capacity.validate_scan', 'raster.strict_sizes',
             'raster.wait_lineage', 'source_edges(client', 'source metadata changed',
             'product Runtime or master/worker restarted', 'pending_bytes', 'safety_bytes', 'workflow_sha256',
-            'exact rejected workflow/target'),
+            'exact rejected workflow/target', 'hillshade.ViewshedMetadata', 'source_scan_client',
+            'wait_for_meta_scan(initializer', 'check_scan_inventory(client, initializer',
+            'metadata.execution', 'metadata.find', 'metadata.snapshot', 'metadata.cleanup()', 'hard_deadline - CLEANUP_RESERVE_SECONDS'),
+        'scripts/test/online-gate.py': ('ADDP_ONLINE_DISK_PRESSURE_DEADLINE',),
+        'scripts/utils/online_raster_lineage.py': ("'raster-disk-pressure': 'disk-pressure-lineage'",),
+        'system/backend/cmd/online-test-fixture/main.go': ('rasterHostedSourcePreparation', '"raster-disk-pressure"'),
         'engines/geopython-workflow/test_online_disk_pressure_fixture.py': (
             'test_pressure_native_exact_phase_rejection_and_same_process_recovery',
             'test_pressure_oracle_rejects_corrupt_or_extra_publications'),
         'Makefile': ('test_online_disk_pressure_fixture.py', '@$(MAKE) test-raster-disk-pressure-online-runner',
             'scripts/test/raster-disk-pressure-online_test.py', 'scripts/test/online-raster-disk-pressure-fixture_test.py',
-            'scripts/test/online-hosted-raster-disk-pressure-gate_test.py')}
+            'scripts/test/online-hosted-raster-disk-pressure-gate_test.py', 'test-raster-disk-pressure-preparation')}
     for relative, fragments in required.items():
         path = repository / relative
         if not path.is_file() or any(not source_contract_contains(path.read_text(), fragment, repository) for fragment in fragments):

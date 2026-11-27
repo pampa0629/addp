@@ -118,10 +118,10 @@ var sourceInitializerPermissions = []string{
 	"system.engine_catalog.read",
 }
 
-func focalHostedPreparation(suite string) bool {
+func rasterHostedSourcePreparation(suite string) bool {
 	switch suite {
 	case "raster-focal-circle-weighted-persistence", "raster-focal-circle-persistence",
-		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence":
+		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence", "raster-disk-pressure":
 		return true
 	default:
 		return false
@@ -129,7 +129,7 @@ func focalHostedPreparation(suite string) bool {
 }
 
 func suiteSourceInitializerPermissions(suite string) []string {
-	if scheduledFileSelected(suite) || focalHostedPreparation(suite) {
+	if scheduledFileSelected(suite) || rasterHostedSourcePreparation(suite) {
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	}
 	switch suite {
@@ -401,7 +401,7 @@ var readWorkflowConsumerPermissions = []string{
 }
 
 func suitePermissions(suite string) ([]string, error) {
-	if focalHostedPreparation(suite) {
+	if rasterHostedSourcePreparation(suite) {
 		return suitePermissions("raster-workflow")
 	}
 	switch suite {
@@ -534,7 +534,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "pg-source-authorization" || suite == "sql-pool-consumer-flow" {
 		return true
 	}
-	if suite == "quality-dynamic-binding" || focalHostedPreparation(suite) {
+	if suite == "quality-dynamic-binding" || rasterHostedSourcePreparation(suite) {
 		return true
 	}
 	return suite == "tidb-consumer-flow" || suite == "raster-hillshade-orthogonal-persistence" || suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
@@ -1372,7 +1372,7 @@ func validateExternalEnvironment(environment []string, output, suite string) err
 	if suite == "orchestrator-execution" && values[orchestratorCaseEnv] == scheduledFileCase && values["ADDP_ONLINE_HOSTED"] != "1" {
 		return errors.New("scheduled file fixture requires disposable GitHub Hosted Linux")
 	}
-	if (suite == "compose-public-origin" || suite == "tidb-consumer-flow" || focalHostedPreparation(suite)) && values["ADDP_ONLINE_HOSTED"] != "1" {
+	if (suite == "compose-public-origin" || suite == "tidb-consumer-flow" || rasterHostedSourcePreparation(suite)) && values["ADDP_ONLINE_HOSTED"] != "1" {
 		return fmt.Errorf("%s fixture requires disposable GitHub Hosted Linux", suite)
 	}
 	if !filepath.IsAbs(output) {

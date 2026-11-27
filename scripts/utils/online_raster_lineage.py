@@ -27,6 +27,7 @@ SUITES = {'raster-cut-fill-persistence': 'cut-fill-lineage', 'raster-tpi-persist
     'raster-aspect-orthogonal-persistence': 'aspect-orthogonal-lineage',
     'raster-hillshade-orthogonal-persistence': 'hillshade-orthogonal-lineage',
     'raster-sight-orthogonal-persistence': 'sight-orthogonal-lineage',
+    'raster-disk-pressure': 'disk-pressure-lineage',
     'raster-interpolate-idw-persistence': 'raster-interpolate-idw-lineage',
     'raster-interpolate-idw-min-points-persistence': 'raster-interpolate-idw-min-points-lineage',
     'raster-interpolate-idw-max-points-persistence': 'raster-interpolate-idw-max-points-lineage',

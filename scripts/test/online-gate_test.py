@@ -245,21 +245,24 @@ class OnlineGateTest(unittest.TestCase):
         self.assertEqual(scenario.kwargs["environment"]["ADDP_ONLINE_HILLSHADE_DEADLINE"], "610.0")
         self.assertEqual(scenario.kwargs["timeout"], 598.0)
 
-    @patch.object(ONLINE_GATE.time, "monotonic", side_effect=(10.0, 12.0, 14.0))
-    @patch.object(ONLINE_GATE, "run_stage", side_effect=(
-        ({"schema_version": "addp.online-preflight/v1", "git_commit": "abc"}, 2000),
-        ({"schema_version": "addp.online-suite/v1", "result": "passed"}, 20),
-    ))
-    def test_weighted_circle_receives_outer_deadline_including_preflight(self, run_stage, _monotonic):
-        name = "raster-focal-circle-weighted-persistence"
+    def test_weighted_circle_and_disk_pressure_share_the_preflight_budget(self):
         self.environment["ADDP_ONLINE_TEST_TIMEOUT_SECONDS"] = "600"
-        self.environment["ADDP_ONLINE_TEST_RUN_ID"] = "weighted-circle-test"
-        ONLINE_GATE.run_online(name, self.repository, self.environment, {name: self.suites["owner-scenario"]})
-        preflight, scenario = run_stage.call_args_list
-        variable = "ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE"
-        self.assertNotIn(variable, preflight.kwargs["environment"])
-        self.assertEqual(scenario.kwargs["environment"][variable], "610.0")
-        self.assertEqual(scenario.kwargs["timeout"], 598.0)
+        for name, variable in (
+            ("raster-focal-circle-weighted-persistence", "ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE"),
+            ("raster-disk-pressure", "ADDP_ONLINE_DISK_PRESSURE_DEADLINE"),
+        ):
+            self.environment["ADDP_ONLINE_TEST_RUN_ID"] = name
+            stages = (
+                ({"schema_version": "addp.online-preflight/v1", "git_commit": "abc"}, 2000),
+                ({"schema_version": "addp.online-suite/v1", "result": "passed"}, 20),
+            )
+            with self.subTest(suite=name), patch.object(ONLINE_GATE.time, "monotonic", side_effect=(10.0, 12.0, 14.0)), \
+                    patch.object(ONLINE_GATE, "run_stage", side_effect=stages) as run_stage:
+                ONLINE_GATE.run_online(name, self.repository, self.environment, {name: self.suites["owner-scenario"]})
+                preflight, scenario = run_stage.call_args_list
+                self.assertNotIn(variable, preflight.kwargs["environment"])
+                self.assertEqual(scenario.kwargs["environment"][variable], "610.0")
+                self.assertEqual(scenario.kwargs["timeout"], 598.0)
 
     def test_prepared_neighborhood_deadline_preserves_preflight_and_square_initialization(self):
         variable = "ADDP_ONLINE_FOCAL_PREPARATION_DEADLINE"

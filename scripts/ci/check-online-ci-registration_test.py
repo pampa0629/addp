@@ -80,7 +80,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         paths = ('.github/workflows/online-t4-gates.yml', 'scripts/test/online-gate.py', 'Makefile',
                  'scripts/test/online-hosted-raster-disk-pressure-gate.sh',
                  'scripts/test/raster-disk-pressure-online.py', 'business/scripts/online-raster-disk-pressure-fixture.py',
-                 'engines/geopython-workflow/test_online_disk_pressure_fixture.py')
+                 'engines/geopython-workflow/test_online_disk_pressure_fixture.py',
+                 'scripts/utils/online_raster_lineage.py', 'system/backend/cmd/online-test-fixture/main.go')
         for relative in paths:
             target = self.repository/relative; target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source/relative, target)
@@ -88,8 +89,11 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         CHECK.validate_raster_disk_pressure_profile(self.repository, registered)
         mutations = ((paths[0], "inputs.suite != 'raster-disk-pressure'"),
             (paths[0], 'nfs-kernel-server nfs-common e2fsprogs util-linux'),
-            (paths[3], '--suite raster-workflow'), (paths[3], 'TMPDIR=/raster-pressure-tmp'),
+            (paths[3], '--suite raster-disk-pressure'), (paths[3], 'TMPDIR=/raster-pressure-tmp'),
             (paths[3], 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600'), (paths[4], 'raster.strict_sizes'),
+            (paths[1], 'ADDP_ONLINE_DISK_PRESSURE_DEADLINE'), (paths[3], 'online_raster_lineage.py prepare'),
+            (paths[4], 'wait_for_meta_scan(initializer'), (paths[4], 'metadata.cleanup()'),
+            (paths[7], "'raster-disk-pressure': 'disk-pressure-lineage'"),
             (paths[4], 'capacity.validate_scan'), (paths[4], 'SubmittedLanguageClient'),
             (paths[4], 'product Runtime or master/worker restarted'), (paths[4], 'pending_bytes'), (paths[4], 'workflow_sha256'),
             (paths[5], 'refusing foreign loop cleanup'), (paths[5], 'nodiscard'), (paths[5], 'loop_detached'),

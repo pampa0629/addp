@@ -1503,6 +1503,8 @@ def run_online(
             scenario_environment = environment
             if suite_name == "raster-hillshade-orthogonal-persistence":
                 scenario_environment = dict(environment, ADDP_ONLINE_HILLSHADE_DEADLINE=str(started_at + timeout))
+            elif suite_name == "raster-disk-pressure":
+                scenario_environment = dict(environment, ADDP_ONLINE_DISK_PRESSURE_DEADLINE=str(started_at + timeout))
             elif suite_name == "raster-focal-circle-weighted-persistence":
                 scenario_environment = dict(environment, ADDP_ONLINE_FOCAL_CIRCLE_WEIGHTED_DEADLINE=str(started_at + timeout))
             elif suite_name in ("raster-focal-circle-persistence", "raster-focal-circle-orthogonal-persistence",

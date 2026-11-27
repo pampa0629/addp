@@ -880,7 +880,7 @@ test-raster-focal-variety-online-runner: test-raster-lineage-observer-unit test-
 .PHONY: test-raster-focal-neighborhood-preparation
 test-raster-focal-neighborhood-preparation:
 	@python3 -m unittest scripts/test/raster-focal-circle-persistence-online_test.py scripts/test/raster-focal-circle-orthogonal-persistence-online_test.py scripts/test/raster-focal-square-seven-persistence-online_test.py
-	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'FocalCircleWeighted' -count=1
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'RasterHostedSourcePreparation' -count=1
 
 .PHONY: test-raster-focal-circle-online-runner
 test-raster-focal-circle-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证分类种类数18成功100失败1971全检及600秒隔离生命周期
@@ -896,7 +896,7 @@ test-raster-focal-circle-orthogonal-online-runner: test-raster-lineage-observer-
 test-raster-focal-circle-weighted-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证加权圆窗27成功72失败2322全检及600秒隔离生命周期
 	@bash -n scripts/test/online-hosted-raster-focal-circle-weighted-gate.sh
 	@python3 -m unittest scripts/test/raster-focal-circle-weighted-persistence-online_test.py scripts/test/online-raster-focal-circle-weighted-fixture_test.py scripts/test/online-hosted-raster-focal-circle-weighted-gate_test.py
-	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'FocalCircleWeighted' -count=1
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'RasterHostedSourcePreparation' -count=1
 
 .PHONY: test-raster-boundary-clean-two-rounds-online-runner
 test-raster-boundary-clean-two-rounds-online-runner: test-raster-lineage-observer-unit test-online-registration-unit test-gate-selection-unit test-online-dispatcher-unit ## 验证边界清理两轮12成功32失败462全检及600秒隔离生命周期
@@ -1144,9 +1144,13 @@ test-vector-zonal-area-weighted-stddev-online-runner: test-gate-selection-unit t
 	@python3 -m unittest scripts/test/vector-zonal-area-weighted-stddev-persistence-online_test.py scripts/test/online-vector-zonal-area-weighted-stddev-fixture_test.py scripts/test/online-hosted-vector-zonal-area-weighted-stddev-gate_test.py
 
 .PHONY: test-raster-disk-pressure-online-runner
-test-raster-disk-pressure-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证真实低磁盘拒绝、恢复与隔离磁盘清理
+test-raster-disk-pressure-online-runner: test-raster-lineage-observer-unit test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit test-raster-disk-pressure-preparation ## 验证真实低磁盘拒绝、恢复与隔离磁盘清理
+
+.PHONY: test-raster-disk-pressure-preparation
+test-raster-disk-pressure-preparation:
 	@bash -n scripts/test/online-hosted-raster-disk-pressure-gate.sh
 	@python3 -m unittest scripts/test/raster-disk-pressure-online_test.py scripts/test/online-raster-disk-pressure-fixture_test.py scripts/test/online-hosted-raster-disk-pressure-gate_test.py
+	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'RasterHostedSourcePreparation/raster-disk-pressure' -count=1
 
 .PHONY: test-raster-nibble-capacity-online-runner
 test-raster-nibble-capacity-online-runner: test-gate-selection-unit test-online-dispatcher-unit test-online-registration-unit ## 验证分类蚕食容量矩阵、资源采样、完整成果与隔离生命周期
@@ -1903,7 +1907,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner test-raster-focal-neighborhood-preparation ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner test-raster-focal-neighborhood-preparation test-raster-disk-pressure-preparation ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py \
 		scripts.test.online-hosted-opengauss-gate_test.OnlineHostedOpenGaussGateTest.test_native_targets_follow_the_product_registry_and_isolate_installer_credentials \

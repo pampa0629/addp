@@ -15,6 +15,7 @@ SUITE = 'raster-disk-pressure'
 PREFIX = 'disk-pressure'
 RUNTIME = 'addp-raster-disk-pressure-runtime'
 SOURCE = 'classes.tif'
+SOURCES = (SOURCE,)
 WIDTH = HEIGHT = 1024
 TRANSFORM = (100., 2.5, 0., 200., 0., -2.5)
 GIB = 1024**3
