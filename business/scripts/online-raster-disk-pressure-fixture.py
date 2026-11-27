@@ -116,8 +116,10 @@ def start_storage(secret):
     state['device'] = device; path.write_text(json.dumps(state))
     if not re.fullmatch(r'/dev/loop[0-9]+', device):
         raise FixtureError('unexpected allocated loop name')
-    # mkfs's default discard could punch holes in the already allocated image.
-    command(['sudo', 'mkfs.ext4', '-F', '-m', '0', '-E', 'nodiscard', '-L', 'addp-pressure', device])
+    # Keep the loop backing file allocated during formatting and after mount.
+    # Deferred inode-table zeroing can punch holes through the loop device.
+    command(['sudo', 'mkfs.ext4', '-F', '-m', '0', '-E', 'nodiscard,lazy_itable_init=0',
+             '-L', 'addp-pressure', device])
     command(['sudo', 'mount', '-t', 'ext4', '-o', 'nodev,nosuid,noexec', device, str(root/'mount')])
     command(['sudo', 'chown', f'{os.getuid()}:{os.getgid()}', str(root/'mount')])
     (root/'mount'/'.addp-online-owner').write_text(os.environ['ADDP_ONLINE_TEST_RUN_ID'])

@@ -96,7 +96,7 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             (paths[7], "'raster-disk-pressure': 'disk-pressure-lineage'"),
             (paths[4], 'capacity.validate_scan'), (paths[4], 'SubmittedLanguageClient'),
             (paths[4], 'product Runtime or master/worker restarted'), (paths[4], 'pending_bytes'), (paths[4], 'workflow_sha256'),
-            (paths[5], 'refusing foreign loop cleanup'), (paths[5], 'nodiscard'), (paths[5], 'loop_detached'),
+            (paths[5], 'refusing foreign loop cleanup'), (paths[5], 'nodiscard,lazy_itable_init=0'), (paths[5], 'loop_detached'),
             (paths[5], 'info.st_size != IMAGE_BYTES or allocated < IMAGE_BYTES'),
             (paths[5], 'allocation_after_preallocation'), (paths[5], 'allocation_after_mount'),
             (paths[5], 'np.array_equal(band.ReadAsArray(), expected, equal_nan=True)'),

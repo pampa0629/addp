@@ -7070,7 +7070,7 @@ def validate_raster_disk_pressure_profile(repository: Path, registered: set[str]
             'online_raster_lineage.py prepare', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN',
             'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600', 'online-raster-disk-pressure-fixture.py stop'),
         'business/scripts/online-raster-disk-pressure-fixture.py': (
-            'NFSExport', 'posix_fallocate', 'mkfs.ext4', 'nodiscard', 'losetup', 'findmnt', 'umount',
+            'NFSExport', 'posix_fallocate', 'mkfs.ext4', 'nodiscard,lazy_itable_init=0', 'losetup', 'findmnt', 'umount',
             'info.st_size != IMAGE_BYTES or allocated < IMAGE_BYTES',
             'allocation_after_preallocation', 'allocation_after_mount', "stage='runtime-identity'",
             'refusing foreign loop cleanup', 'loop_detached', 'image_removed',

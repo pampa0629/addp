@@ -214,6 +214,10 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 **镜像分配取证。** 夹具在预分配后、挂载后和各压力阶段记录镜像逻辑长度及实际分配字节。运行时身份检查失配时记录阶段、预期及两项实测值。逻辑长度须等于 4 GiB，实际分配须至少 4 GiB。本地隔离 Linux 已分别验证逻辑长度失配和分配块不足的诊断。固定 `61424fe1f` 的[共享 Execution Runner](https://github.com/pampa0629/addp/actions/runs/45946620713/job/140332672402)实际通过 21 项低盘专项、160 项登记、42 项共享准备及隔离身份 Go 测试。同一提交的[Linux Native](https://github.com/pampa0629/addp/actions/runs/45946620713/job/140332672316)在 Ubuntu 24.04／GDAL 3.8.4 执行标准全量，22,120 项通过、141 条警告、1611.78 秒，失败、跳过和筛除均为 0。独立 NetCDF 专项另有 109 项通过。同一提交的[平台一致性](https://github.com/pampa0629/addp/actions/runs/45946620713/job/140332672379)通过预检及 `make test-platform-checks`。真实低盘业务仍待 Hosted 原始归档。
 
+**固定 Hosted 复验失败。** `61424fe1f` 的唯一复验在首条业务提交前停止。预分配和挂载后均为逻辑 4,294,967,296 字节、实际分配 4,294,971,392 字节。Runtime 身份复查时逻辑长度不变，实际分配降至 4,227,870,720 字节。业务用时 2.144 秒，0 条业务执行。一笔源授权已撤销并复核不可见。场景内释放辅助步骤失败，外层挂载、loop、镜像、NFS、部署及 Infra 清理通过。 [复验 Job](https://github.com/pampa0629/addp/actions/runs/45987728080/job/140467529025) · [官方 ZIP](https://github.com/pampa0629/addp/actions/runs/45987728080/artifacts/15194300157)，SHA-256 `d78a7328ae28d13699b8bb3756484935b5bfc924a422fbf2b5c07f24c05d6d64`。
+
+**镜像初始化修正。** 隔离 Linux 的原生 loop／ext4 复现了相同的分配下降。默认格式化留下 32 组延迟初始化的 inode 表，挂载后完成初始化时，loop 把允许释放的写零请求转换为镜像打孔。夹具通过 `nodiscard,lazy_itable_init=0` 在格式化时同步初始化，隔离 Linux 对照在挂载后持续保留实际分配。4 GiB 逻辑和分配断言、8 条执行和 600 秒预算继续适用。 [mke2fs 参数](https://man7.org/linux/man-pages/man8/mke2fs.8.html) · [Linux loop 写零行为](https://github.com/torvalds/linux/blob/v6.14/drivers/block/loop.c#L472-L485)。
+
 
 ## 水文与分区统计专项共同要求
 

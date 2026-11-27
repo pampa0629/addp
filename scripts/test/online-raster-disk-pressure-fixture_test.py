@@ -33,7 +33,7 @@ class DiskPressureFixtureTest(unittest.TestCase):
             self.assertEqual(check_allocated.call_args.args[1], 'after-preallocation')
             check_mounted.assert_called_once_with(secret, stage='after-mount')
             mkfs = next(v for v in calls if 'mkfs.ext4' in v)
-            self.assertEqual(mkfs[mkfs.index('-E')+1], 'nodiscard')
+            self.assertEqual(mkfs[mkfs.index('-E')+1], 'nodiscard,lazy_itable_init=0')
 
     def test_image_length_and_allocated_blocks_use_one_snapshot_and_report_both(self):
         blocks = m.IMAGE_BYTES // 512
