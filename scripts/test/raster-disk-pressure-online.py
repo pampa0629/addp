@@ -42,36 +42,64 @@ def tool(repository, env, action, *names):
     return obj(json.loads(p.stdout), 'pressure fixture result')
 
 
-def verify_failure(execution, phase, observation, language):
-    if execution.get('status') != 'failed' or execution.get('outputs'):
-        raise SuiteError('pressure did not fail without outputs')
-    metadata = obj(execution.get('metadata'), 'failed metadata')
-    result = obj(metadata.get('result') or {}, 'failed result')
-    facts = obj(metadata.get('lineage_facts') or {}, 'failed lineage facts')
-    if result.get('meta_scan_runs') or facts.get('outputs'):
-        raise SuiteError('pressure rejection published scan or output lineage')
-    message = execution.get('error_msg')
-    if not isinstance(message, str):
-        raise SuiteError('pressure failure message missing')
+def verify_failure_message(message, phase, observation, language):
     expected_phase = 'distance transform' if phase == 'distance' else 'raster encoding'
-    prefix = {'zh-cn': '栅格临时磁盘空间不足', 'en': 'Insufficient raster temporary disk space'}[language]
-    if expected_phase not in message or prefix not in message:
-        raise SuiteError('failure is not the expected submitted-language disk guard phase')
-    values = {k: int(v) for k, v in re.findall(r'(required_bytes|available_bytes|pending_bytes|safety_bytes)=(\d+)', message)}
+    task = 'compute' if phase == 'distance' else 'save'
+    cause = {'zh-cn': f'栅格临时磁盘空间不足（阶段：{expected_phase}）：',
+             'en': f'Insufficient raster temporary disk space during {expected_phase}: '}[language]
+    prefix = f'工作流运行时执行失败: EXECUTION_FAILED: 任务 {task} 执行失败: {cause}'
+    keys = ('required_bytes', 'available_bytes', 'pending_bytes', 'safety_bytes')
+    match = re.fullmatch(re.escape(prefix) + ', '.join(rf'{key}=(\d+)' for key in keys), message)
+    if match is None:
+        raise SuiteError('original Develop log does not show the expected task, phase and submitted language')
+    values = dict(zip(keys, map(int, match.groups())))
     pixels = fixture.WIDTH*fixture.HEIGHT
     # Independent fixed-grid arithmetic, not imports of private product estimates.
     working = 2*(16*(256**2*9+64))+8*1024**2
     encoding = 2*(2*(4096**2*9+64)+8*1024**2)
-    if (set(values) != {'required_bytes', 'available_bytes', 'pending_bytes', 'safety_bytes'}
-        or values['required_bytes'] != (32*pixels if phase == 'distance' else encoding)
+    if (values['required_bytes'] != (32*pixels if phase == 'distance' else encoding)
         or values['pending_bytes'] != (working if phase == 'distance' else 0)
         or values['safety_bytes'] != fixture.SAFETY
         or abs(values['available_bytes']-observation['available_bytes']) > 8*1024**2
         or values['available_bytes'] >= sum(values[k] for k in ('required_bytes', 'pending_bytes', 'safety_bytes'))):
         raise SuiteError('actual filesystem capacity and guard budget disagree')
-    if any(v in message for v in ('/raster-pressure-tmp', '/home/runner/', 'No space left on device', 'ENOSPC')):
-        raise SuiteError('rejection exposes a private path or is an uncontrolled write failure')
-    return {'phase': expected_phase, **values, 'language': language}
+    return {'phase': expected_phase, **values, 'language': language, 'source': 'develop_runtime_log'}
+
+
+def read_failure_diagnostic(repository, env, identifier, phase, observation, language, deadline):
+    root = repository / Path(env.get('ADDP_RUNTIME_LOG_ROOT', 'logs/runtime'))
+    marker = f'[DevExecutor] 工作流引擎调用失败: execution_id={identifier} err='
+    while time.monotonic() < deadline:
+        for path in (root/'develop').glob('*/*.jsonl'):
+            with path.open(encoding='utf-8') as lines:
+                for line in lines:
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue  # Capture can still be appending its last line.
+                    if not isinstance(event, dict) or (event.get('module_name'), event.get('role')) != ('develop', 'backend'):
+                        continue
+                    message = event.get('message')
+                    if not isinstance(message, str):
+                        continue
+                    _, found, cause = message.partition(marker)
+                    if found:
+                        return verify_failure_message(cause, phase, observation, language)
+        time.sleep(min(1, max(0, deadline-time.monotonic())))
+    raise SuiteError('missing original Develop disk guard diagnostic for the current execution')
+
+
+def verify_failed_observation(execution, identifier, language):
+    if ((execution.get('execution_id'), execution.get('module'), execution.get('status')) != (identifier, 'develop', 'failed')
+        or 'error_msg' in execution
+        or obj(execution.get('error_details'), 'failed diagnostics').get('category') != 'execution_failed'
+        or obj(execution.get('execution_config'), 'failed execution configuration').get('display_language') != language):
+        raise SuiteError('public pressure failure identity, language or diagnostic projection differs')
+    metadata = obj(execution.get('metadata'), 'failed metadata')
+    result = obj(metadata.get('result') or {}, 'failed result')
+    facts = obj(metadata.get('lineage_facts') or {}, 'failed lineage facts')
+    if execution.get('outputs') or result.get('meta_scan_runs') or facts.get('outputs'):
+        raise SuiteError('pressure rejection published outputs, scan or lineage')
 
 
 class SubmittedLanguageClient:
@@ -130,10 +158,12 @@ def run_scenario(repository, env, client, operate=tool):
                 execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed' if failure else 'success')
                 name = workflow['tasks'][-1]['params']['target_name']; target = parent.replace('?type=directory', '/'+name+'?type=file')
                 if failure:
-                    diagnostic = verify_failure(execution, stage, observation, language)
+                    verify_failed_observation(execution, identifier, language)
+                    diagnostic = read_failure_diagnostic(repository, env, identifier, stage, observation, language, deadline)
                     opposite = SubmittedLanguageClient(client, 'en' if language == 'zh-cn' else 'zh-cn')
                     reread = opposite.request('GET', '/api/v1/develop/executions/'+identifier, (200,)).payload
-                    if reread.get('error_msg') != execution.get('error_msg'):
+                    verify_failed_observation(reread, identifier, language)
+                    if any(reread[key] != execution[key] for key in ('error_details', 'execution_config')):
                         raise SuiteError('query language rewrote the recorded failure')
                     if scan_ids(client) != old_scans or source_edges(client, item['id']) != old_edges:
                         raise SuiteError('rejected workflow added a scan or derived lineage')

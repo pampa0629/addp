@@ -1,6 +1,8 @@
 import copy
 import importlib
+import json
 from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -11,7 +13,8 @@ ENV = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_DISK_PRESSURE_NFS_ENGINE_
 class Client:
     fault = None
 
-    def __init__(self):
+    def __init__(self, log_path):
+        self.log_path = log_path
         self.executions = {}; self.targets = {}; self.scans = ['source-scan']; self.headers = []; self.pressure_phase = None; self.parents = {}; self.proofs = {}
         self.source = {'id': 1, 'item_type': 'file', 'full_name': m.fixture.SOURCE, 'fingerprint': 'source-fingerprint', 'size_bytes': 1200}
 
@@ -33,11 +36,21 @@ class Client:
             if phase:
                 working = 2*(16*(256**2*9+64))+8*1024**2
                 required = 32*1024**2 if phase == 'distance' else 2*(2*(4096**2*9+64)+8*1024**2)
-                text = '栅格临时磁盘空间不足' if (headers or {}).get('Accept-Language') == 'zh-cn' or self.fault == 'language' else 'Insufficient raster temporary disk space'
+                language = headers['Accept-Language']
                 stage = 'distance transform' if phase == 'distance' else 'raster encoding'
                 if self.fault == 'phase': stage = 'nibble output'
-                message = f'{text}: {stage}: required_bytes={required}, available_bytes={m.fixture.PRESSURE_FREE[phase]}, pending_bytes={working if phase == "distance" else 0}, safety_bytes={m.fixture.SAFETY}'
-                data = {'status': 'failed', 'error_msg': message, 'outputs': {'save': {}} if self.fault == 'publish' else {}, 'metadata': {}}
+                task = 'compute' if phase == 'distance' else 'save'
+                if self.fault == 'task': task = 'source'
+                text = (f'栅格临时磁盘空间不足（阶段：{stage}）：' if language == 'zh-cn' or self.fault == 'language'
+                        else f'Insufficient raster temporary disk space during {stage}: ')
+                counts = f'required_bytes={required}, available_bytes={m.fixture.PRESSURE_FREE[phase]}, pending_bytes={working if phase == "distance" else 0}, safety_bytes={m.fixture.SAFETY}'
+                message = (f'❌ [DevExecutor] 工作流引擎调用失败: execution_id={identifier} err=工作流运行时执行失败: '
+                           f'EXECUTION_FAILED: 任务 {task} 执行失败: {text}{counts}')
+                with self.log_path.open('a', encoding='utf-8') as target:
+                    target.write(json.dumps({'module_name': 'develop', 'role': 'backend', 'message': message})+'\n')
+                data = {'status': 'failed', 'execution_id': identifier, 'module': 'develop',
+                        'error_details': {'category': 'execution_failed'}, 'execution_config': {'display_language': language},
+                        'outputs': {'save': {}} if self.fault == 'publish' else {}, 'metadata': {}}
                 if self.fault == 'scan': self.scans.append('bad-scan')
             else:
                 target = 'addp://engine/3/path/outputs/'+name+'?type=file'; scan = 'scan-'+identifier; self.parents[scan] = identifier; self.proofs[name] = identifier
@@ -57,7 +70,10 @@ class Client:
                 if self.fault == 'size': artifact['size_bytes'] = 2001
             self.executions[identifier] = data
             data = {'execution_id': identifier}
-        elif '/develop/executions/' in path: data = self.executions[path.rsplit('/', 1)[-1]]
+        elif '/develop/executions/' in path:
+            data = self.executions[path.rsplit('/', 1)[-1]]
+            if self.fault == 'reread' and headers and data['status'] == 'failed':
+                data = {**data, 'error_details': {'category': 'unknown'}}
         elif '/meta/executions/' in path:
             scan = path.rsplit('/', 1)[-1]; name = scan.removeprefix('scan-')
             data = {'status': 'success', 'execution_id': scan, 'module': 'meta', 'task_type': 'scan', 'parent_execution_id': self.parents.get(scan, 'source-exec'),
@@ -87,31 +103,41 @@ class DiskPressureOnlineTest(unittest.TestCase):
 
     def setUp(self): self.actions = []; self.snapshots = 0; self.restart = False
 
+    def new_client(self):
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        log = directory/'develop'/'test-instance'/'events.jsonl'
+        log.parent.mkdir(parents=True)
+        client = Client(log)
+        return client, {**ENV, 'ADDP_RUNTIME_LOG_ROOT': str(directory)}
+
     def test_eight_platform_executions_keep_identity_strict_scans_lineage_and_submitted_language(self):
-        client = Client(); self.client = client; result = m.run_scenario(Path('.'), ENV, client, self.operate)
+        client, env = self.new_client(); self.client = client; result = m.run_scenario(Path('.'), env, client, self.operate)
         self.assertEqual(result['result'], 'passed'); self.assertEqual(len(result['cases']), 4); self.assertEqual(len(result['failures']), 4)
         self.assertEqual(len(client.executions), 8); self.assertEqual(len(client.scans), 5)
         self.assertEqual({x['language'] for x in result['failures']}, {'zh-cn', 'en'})
+        self.assertEqual({x['source'] for x in result['failures']}, {'develop_runtime_log'})
         self.assertEqual(self.actions[-1], 'release')
         self.assertEqual(self.snapshots, 9)
 
     def test_wrong_phase_language_publication_scan_actor_size_and_restart_are_not_accepted(self):
-        for fault in ('phase', 'language', 'publish', 'scan', 'actor', 'size', 'restart'):
-            self.setUp(); client = Client(); client.fault = fault; self.client = client; self.restart = fault == 'restart'
+        for fault in ('phase', 'task', 'language', 'reread', 'publish', 'scan', 'actor', 'size', 'restart'):
+            self.setUp(); client, env = self.new_client(); client.fault = fault; self.client = client; self.restart = fault == 'restart'
             with self.subTest(fault=fault), self.assertRaises(m.SuiteError):
-                m.run_scenario(Path('.'), ENV, client, self.operate)
+                m.run_scenario(Path('.'), env, client, self.operate)
             self.assertEqual(self.actions[-1], 'release')
 
     def test_no_physical_or_budget_assertion_is_replaced_by_successful_http(self):
         working = 2*(16*(256**2*9+64))+8*1024**2
-        message = f'栅格临时磁盘空间不足 distance transform required_bytes={32*1024**2}, available_bytes={m.fixture.PRESSURE_FREE["distance"]}, pending_bytes={working}, safety_bytes={m.fixture.SAFETY}'
-        good = {'status': 'failed', 'error_msg': message, 'metadata': {}, 'outputs': {}}
+        message = ('工作流运行时执行失败: EXECUTION_FAILED: 任务 compute 执行失败: 栅格临时磁盘空间不足（阶段：distance transform）：'
+                   f'required_bytes={32*1024**2}, available_bytes={m.fixture.PRESSURE_FREE["distance"]}, '
+                   f'pending_bytes={working}, safety_bytes={m.fixture.SAFETY}')
         observation = {'available_bytes': m.fixture.PRESSURE_FREE['distance']}
-        m.verify_failure(good, 'distance', observation, 'zh-cn')
+        m.verify_failure_message(message, 'distance', observation, 'zh-cn')
         for old, new in [('required_bytes=33554432', 'required_bytes=1'), ('pending_bytes='+str(working), 'pending_bytes=0'),
-                         ('safety_bytes='+str(m.fixture.SAFETY), 'safety_bytes=1'), ('distance transform', 'raster encoding')]:
-            value = copy.deepcopy(good); value['error_msg'] = message.replace(old, new)
-            with self.subTest(change=old), self.assertRaises(m.SuiteError): m.verify_failure(value, 'distance', observation, 'zh-cn')
+                         ('safety_bytes='+str(m.fixture.SAFETY), 'safety_bytes=1'), ('distance transform', 'raster encoding'),
+                         ('栅格临时磁盘空间不足', 'No space left on device'), ('required_bytes=', '/raster-pressure-tmp required_bytes=')]:
+            with self.subTest(change=old), self.assertRaises(m.SuiteError):
+                m.verify_failure_message(message.replace(old, new), 'distance', observation, 'zh-cn')
 
     def test_exact_definitions_reject_unknown_operator_stage_and_keep_canonical_save(self):
         for op in ('nibble', 'proximity'):
