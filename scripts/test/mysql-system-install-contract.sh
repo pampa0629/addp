@@ -225,6 +225,13 @@ grep -q '^--- PASS: TestTenantServiceAccountServiceAgainstMySQL ' "$work/tenant-
 grep -q '^--- PASS: TestOAuthClientManagementServiceAgainstMySQL ' "$work/oauth-client-management.log"
 grep -q '^    --- PASS: TestOAuthClientManagementServiceAgainstMySQL/registered_scope_and_terminal_approval ' \
     "$work/oauth-client-management.log"
+(
+    cd "$(dirname "$0")/../../system/backend"
+    unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+    ADDP_TEST_MYSQL_OAUTH_CODE_FLOW=1 GOWORK=off go test ./internal/iam/oauth \
+        -run '^TestTenantOAuthCodeFlowAgainstMySQL$' -count=1 -v
+) | tee "$work/tenant-oauth-code-flow.log"
+grep -q '^--- PASS: TestTenantOAuthCodeFlowAgainstMySQL ' "$work/tenant-oauth-code-flow.log"
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
 test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
