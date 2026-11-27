@@ -1,6 +1,6 @@
 FROM localhost:5001/ubuntu:24.04
 
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates tzdata && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates tzdata util-linux && rm -rf /var/lib/apt/lists/*
 
 # Build arguments for precise binary selection
 ARG BUILD_ARCH=amd64
@@ -22,4 +22,5 @@ CMD ["./server"]
 
 COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
 COPY develop/module-declaration.json /app/module-declaration.json
-ENTRYPOINT ["/app/runtime-log", "launch", "--module", "develop", "--role", "backend", "--"]
+# The receiver keeps the node log owner. Drop privileges before exec of the backend.
+ENTRYPOINT ["/app/runtime-log", "launch", "--module", "develop", "--role", "backend", "--", "/usr/bin/setpriv", "--reuid=10001", "--regid=10001", "--clear-groups", "--no-new-privs", "--"]
