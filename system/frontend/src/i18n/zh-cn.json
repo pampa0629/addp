@@ -798,6 +798,7 @@
           "engine_access_deny": "源读取拒绝规则",
           "engine_access_delegation": "引擎授权管理委派",
           "engine_descriptor": "引擎描述",
+          "transfer_field_connection": "Transfer 字段推荐源表连接",
           "enrollment": "数据保护纳管",
           "entity": "业务实体",
           "entity_relation": "实体关系",

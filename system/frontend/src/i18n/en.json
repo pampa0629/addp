@@ -798,6 +798,7 @@
           "engine_access_deny": "Source Read Deny",
           "engine_access_delegation": "Engine Access Management Delegation",
           "engine_descriptor": "Engine Descriptor",
+          "transfer_field_connection": "Transfer Field Recommendation Source Connection",
           "enrollment": "Data Protection Enrollment",
           "entity": "Business Entity",
           "entity_relation": "Entity Relation",
