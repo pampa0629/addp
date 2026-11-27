@@ -17,7 +17,7 @@ import (
 const mysqlIAMFoundationOwner = "system_iam_foundation"
 const mysqlIAMFoundationVersion int64 = 23
 
-//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql mysql_execution_authorization/*.sql
+//go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql mysql_execution_authorization/*.sql mysql_search_authorization/*.sql
 var mysqlIAMFoundationSQL embed.FS
 
 // RequireMySQLIAMFoundation checks the installed owner revision without DDL.
@@ -62,10 +62,21 @@ func CheckMySQLSystemStartup(db *gorm.DB) error {
 	if err := schema.RequireMySQL(db, mysqlCleanupOwner, mysqlCleanupVersion); err != nil {
 		return err
 	}
+	if err := schema.RequireMySQL(db, mysqlSearchAuthorizationOwner, mysqlSearchAuthorizationVersion); err != nil {
+		return err
+	}
 	if err := schema.Require(db, "common", schema.CommonVersion); err != nil {
 		return err
 	}
 	return schema.RequireMySQL(db, mysqlGrantProcedureOwner, mysqlGrantProcedureVersion)
+}
+
+const mysqlSearchAuthorizationOwner = "system_search_authorization"
+const mysqlSearchAuthorizationVersion = 1
+
+// MigrateMySQLSearchAuthorization prepares the tenant revisions consumed by search.
+func MigrateMySQLSearchAuthorization(db *gorm.DB) error {
+	return migrateSystemMySQL(db, mysqlSearchAuthorizationOwner, mysqlSearchAuthorizationVersion, "mysql_search_authorization", nil)
 }
 
 const mysqlCleanupOwner = "system_cleanup_requests"

@@ -12,6 +12,7 @@ import (
 	shared "github.com/addp/common/authorization"
 	"github.com/addp/common/dataitem/authorizationfacts"
 	engineplugin "github.com/addp/common/engine/plugin"
+	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 )
@@ -64,10 +65,61 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 	if _, err := svc.AcceptFulfillment(ctx, caller, id, binding); err != nil || calls != 1 {
 		t.Fatalf("historical acceptance: basis calls=%d, %v", calls, err)
 	}
+	configureSearchObservationFixture(t, svc)
+	searchToken := issueMySQLSearchSession(t, repo, confirmer.PrincipalID, confirmer.MembershipID)
+	search := shared.SourceSearchCheckRequest{QueryNonce: strings.Repeat("1", 32), Targets: []engineplugin.EngineCatalogPath{}}
+	observeSearch := func() string {
+		t.Helper()
+		result, err := svc.CheckManagerSearchRead(ctx, searchToken, search)
+		if err != nil || !result.Matches(search) {
+			t.Fatalf("observe Manager search: %+v, %v", result, err)
+		}
+		return result.ObservationTag
+	}
+	checkCursor := func(tag string, changed bool) {
+		t.Helper()
+		replay := search
+		replay.ExpectedObservationTag = &tag
+		result, err := svc.CheckManagerSearchRead(ctx, searchToken, replay)
+		if changed {
+			if result != nil || !errors.Is(err, ErrSearchContextChanged) {
+				t.Fatalf("old search cursor not invalidated: %+v, %v", result, err)
+			}
+		} else if err != nil || !result.Matches(replay) {
+			t.Fatalf("unchanged search cursor not reusable: %+v, %v", result, err)
+		}
+	}
+	checkSearchTarget := func(tag string, visible bool) {
+		t.Helper()
+		request := search
+		request.Targets = []engineplugin.EngineCatalogPath{base.Path}
+		request.ExpectedObservationTag = &tag
+		result, err := svc.CheckManagerSearchRead(ctx, searchToken, request)
+		if err != nil || !result.Matches(request) || len(result.Targets) != 1 ||
+			result.Targets[0].Visible != visible || result.Targets[0].ContentReadable != visible {
+			t.Fatalf("search target visibility=%v: %+v, %v", visible, result, err)
+		}
+	}
+	beforeIssue := observeSearch()
+	checkCursor(beforeIssue, false)
+	checkSearchTarget(beforeIssue, false)
 	first, err := svc.IssueFulfillmentGrant(ctx, caller, id, binding)
 	if err != nil || first.RequestID != id || first.GrantedAt.IsZero() {
 		t.Fatalf("first issue: %+v, %v", first, err)
 	}
+	checkCursor(beforeIssue, true)
+	beforeRevocation := observeSearch()
+	checkSearchTarget(beforeRevocation, true)
+	rollback := errors.New("rollback engine version change")
+	if err := repo.transaction(ctx, func(tx *Repository) error {
+		if err := tx.db.Exec("UPDATE system.engines SET version=version+1 WHERE tenant_id=7 AND id=12").Error; err != nil {
+			return err
+		}
+		return rollback
+	}); !errors.Is(err, rollback) {
+		t.Fatalf("rolled back engine update: %v", err)
+	}
+	checkCursor(beforeRevocation, false)
 	relation := sourceGrant{TenantID: 7, EngineID: int64(binding.Path.EngineID), ItemFingerprint: binding.ItemFingerprint, RecipientType: binding.RecipientType, RecipientID: binding.RecipientID, Action: binding.Action}
 	relation.CatalogPath, err = encodeFulfillmentPath(binding.Path)
 	if err != nil {
@@ -127,10 +179,15 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 	if err != nil || revoked.RevokedAt.Before(first.GrantedAt) || len(revoked.RevokedRequestIDs) != 1 || revoked.RevokedRequestIDs[0] != id {
 		t.Fatalf("withdraw: %+v, %v", revoked, err)
 	}
+	checkCursor(beforeRevocation, true)
+	afterRevocation := observeSearch()
 	again, err := svc.RevokeGrant(ctx, withdrawal)
 	if err != nil || !again.RevokedAt.Equal(revoked.RevokedAt) {
 		t.Fatalf("repeat withdrawal: %+v, %v", again, err)
 	}
+	checkCursor(afterRevocation, false)
+	checkSearchTarget(afterRevocation, false)
+	t.Log("Manager search: committed Grant and revocation each invalidate the prior cursor; rollback and replay retain it")
 	checkActive(uuid.Nil)
 	checkVisibility("no_grant")
 	second, err := svc.IssueFulfillmentGrant(ctx, caller, secondID, secondBinding)
@@ -290,4 +347,41 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 	if err != nil || missing.Found {
 		t.Fatalf("refused acceptance left receipt: %+v, %v", missing, err)
 	}
+}
+
+func issueMySQLSearchSession(t *testing.T, repo *Repository, principalID, membershipID int64) string {
+	t.Helper()
+	identity := repo.identity()
+	tokens, err := iam.NewTokenFamilyService(identity, iam.BrowserSessionConfig{ResourceTicketOwners: []string{"manager"}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := iam.NewContextSelectionService(identity, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	result, err := selection.BeginContextSelection(ctx, iam.BeginContextSelectionInput{
+		PrincipalID: principalID,
+		Authentication: iam.SessionAuthentication{
+			Methods: []string{"password"}, AssuranceLevel: iam.AssuranceLevelAAL1, AuthenticatedAt: time.Now().UTC().Add(-time.Second),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := result.Session
+	if result.Challenge != nil {
+		session, err = selection.ConsumeContextSelection(ctx, iam.ConsumeContextSelectionInput{
+			SelectionTicket: result.Challenge.SelectionTicket,
+			Choice:          iam.ContextSelectionChoice{Type: iam.ContextTypeTenant, TenantMembershipID: &membershipID},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if session == nil {
+		t.Fatal("required a Manager tenant session")
+	}
+	return session.AccessToken
 }

@@ -92,7 +92,7 @@ test "$(echo "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_sch
 admin <<'SQL'
 SQL
 test "$(echo "SELECT version>0 AND pending_version=0 FROM startup_schema_revision WHERE owner='system_iam_foundation'" | runtime)" = 1
-test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks','system_source_grant_catalog','system_engine_delegations','system_cleanup_requests','system_execution_authorization') AND version>0 AND pending_version=0" | runtime)" = 9
+test "$(echo "SELECT COUNT(*) FROM startup_schema_revision WHERE owner IN ('system_iam_foundation','system_access_request_locks','system_module_registry','system_engine_catalog','system_access_target_locks','system_source_grant_catalog','system_engine_delegations','system_cleanup_requests','system_execution_authorization','system_search_authorization') AND version>0 AND pending_version=0" | runtime)" = 10
 runtime <<'SQL'
 INSERT INTO cleanup_requests(request_id,tenant_id,requested_by,parent_execution_id,intent_digest,source_operation_id,action,protocol,engine_confirmation,requested_scope)
 VALUES ('00000000-0000-4000-8000-000000000001',1,1,'00000000-0000-4000-8000-000000000002',SHA2('scan',256),'source-1','scan','{ "signed": true }','','[]');

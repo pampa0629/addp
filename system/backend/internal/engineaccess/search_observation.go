@@ -77,8 +77,17 @@ func (r *Repository) searchObservationTag(ctx context.Context, current *shared.A
 		return "", err
 	}
 	var revision struct{ Generation, Version string }
-	if err = r.db.WithContext(ctx).Raw(`SELECT g.generation::text AS generation,COALESCE(r.version,0)::text AS version
- FROM system.search_authorization_generation g LEFT JOIN system.search_authorization_revisions r ON r.tenant_id=? WHERE g.singleton`, tenant).Scan(&revision).Error; err != nil {
+	revisionColumns := "g.generation::text AS generation,COALESCE(r.version,0)::text AS version"
+	subjectInput := `WITH input AS (SELECT ?::bigint tenant_id,?::bigint principal_id,?::bigint membership_id,
+ ?::bigint authorization_version,?::timestamptz observed_at)`
+	if r.db.Dialector.Name() == "mysql" {
+		revisionColumns = "g.generation,CAST(COALESCE(r.version,0) AS CHAR) AS version"
+		subjectInput = `WITH input AS (SELECT CAST(? AS SIGNED) tenant_id,CAST(? AS SIGNED) principal_id,
+ CAST(? AS SIGNED) membership_id,CAST(? AS SIGNED) authorization_version,CAST(? AS DATETIME(6)) observed_at)`
+	}
+	revisionQuery := "SELECT " + revisionColumns + `
+ FROM system.search_authorization_generation g LEFT JOIN system.search_authorization_revisions r ON r.tenant_id=? WHERE g.singleton`
+	if err = r.db.WithContext(ctx).Raw(revisionQuery, tenant).Scan(&revision).Error; err != nil {
 		return "", err
 	}
 	if revision.Generation == "" || revision.Version == "" {
@@ -87,8 +96,7 @@ func (r *Repository) searchObservationTag(ctx context.Context, current *shared.A
 	var boundary struct{ NextBoundary *time.Time }
 	// Reuse the current source/recipient CTE; this is a time aggregate, not an
 	// enumeration of accessible DataItems. Unrelated role deadlines may expire early.
-	query := `WITH input AS (SELECT ?::bigint tenant_id,?::bigint principal_id,?::bigint membership_id,
- ?::bigint authorization_version,?::timestamptz observed_at)` + sourceReadSubjectCTEs + `, boundaries AS (
+	query := subjectInput + sourceReadSubjectCTEs + `, boundaries AS (
  SELECT g.granted_at AS boundary FROM system.engine_access_grants g JOIN recipients r USING(recipient_type,recipient_id)
  WHERE g.tenant_id=? AND NOT EXISTS(SELECT 1 FROM system.engine_access_grant_revocations v WHERE v.request_id=g.request_id)
  UNION ALL SELECT g.expires_at FROM system.engine_access_grants g JOIN recipients r USING(recipient_type,recipient_id)

@@ -350,8 +350,9 @@ VALUES(7,'custom.catalog_confirmer','Catalog business confirmer','tenant_custom'
 SET @confirmer=LAST_INSERT_ID();
 SET @entry=(SELECT id FROM permissions WHERE permission_key='catalog.entry.read');
 SET @decision=(SELECT id FROM permissions WHERE permission_key='catalog.sharing_decision.create');
+SET @search=(SELECT id FROM permissions WHERE permission_key='manager.search.execute');
 INSERT INTO role_permissions(role_id,permission_id,source_type,created_by_principal_id)
-VALUES(@confirmer,@entry,'tenant',40001),(@confirmer,@decision,'tenant',40001);
+VALUES(@confirmer,@entry,'tenant',40001),(@confirmer,@decision,'tenant',40001),(@confirmer,@search,'tenant',40001);
 SET @authority=(SELECT id FROM roles WHERE role_key='tenant.source_data_authorizer');
 SET @runtime=(SELECT id FROM roles WHERE role_key='tenant.catalog_runtime');
 INSERT INTO role_assignments(principal_id,role_id,scope_type,tenant_id,source_type,created_by_principal_id,grant_reason)
