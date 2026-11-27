@@ -31,7 +31,7 @@ func MigrateMySQLIAMFoundation(db *gorm.DB) error {
 }
 
 const mysqlModuleRegistryOwner = "system_module_registry"
-const mysqlModuleRegistryVersion int64 = 1
+const mysqlModuleRegistryVersion int64 = 2
 
 // CheckMySQLSystemStartup verifies the installed owners using the runtime connection.
 func CheckMySQLSystemStartup(db *gorm.DB) error {
@@ -113,7 +113,7 @@ func MigrateMySQLSourceGrantCatalog(db *gorm.DB) error {
 }
 
 const mysqlEngineCatalogOwner = "system_engine_catalog"
-const mysqlEngineCatalogVersion int64 = 3
+const mysqlEngineCatalogVersion int64 = 4
 
 func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 	return migrateSystemMySQL(db, mysqlEngineCatalogOwner, mysqlEngineCatalogVersion, "mysql_engine_catalog", nil)

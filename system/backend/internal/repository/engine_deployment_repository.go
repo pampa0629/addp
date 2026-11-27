@@ -9,6 +9,7 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -36,8 +37,12 @@ func (r *EngineDeploymentRepository) RegisteredSources(ctx context.Context, keys
 		return nil, commonapi.ErrBadRequest
 	}
 	query := r.db.WithContext(ctx).Model(&models.EngineDeployment{})
+	predicate := "inventory->'source'->>'docker_engine_id'=? AND inventory->'source'->>'project'=? AND inventory->'services'->0->>'service'=?"
+	if r.db.Dialector.Name() == "mysql" {
+		predicate = "source_engine=? AND source_project=? AND source_service=?"
+	}
 	for _, key := range keys {
-		query = query.Or("inventory->'source'->>'docker_engine_id'=? AND inventory->'source'->>'project'=? AND inventory->'services'->0->>'service'=?", key[0], key[1], key[2])
+		query = query.Or(predicate, key[0], key[1], key[2])
 	}
 	var rows []models.EngineDeployment
 	if err := query.Select("deployment_id", "inventory").Find(&rows).Error; err != nil {
@@ -54,6 +59,10 @@ func (r *EngineDeploymentRepository) RegisteredSources(ctx context.Context, keys
 func deploymentDBError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return commonapi.ErrNotFound
+	}
+	var duplicate *mysqlDriver.MySQLError
+	if errors.As(err, &duplicate) && duplicate.Number == 1062 && strings.HasSuffix(duplicate.Message, ".engine_deployment_source_unique'") {
+		return ErrDeploymentSourceOccupied
 	}
 	var state *pgconn.PgError
 	if errors.As(err, &state) && state.Code == "23505" && state.ConstraintName == "engine_deployment_source_unique" {
@@ -121,7 +130,11 @@ func (r *EngineDeploymentRepository) List(ctx context.Context, page, size int, f
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		query := tx.Model(&models.EngineDeployment{})
 		if filter.Scope != "" {
-			query = query.Where("inventory->'source'->>'project' = ?", models.EngineDeploymentProject(filter.Scope))
+			project := "inventory->'source'->>'project'"
+			if tx.Dialector.Name() == "mysql" {
+				project = "source_project"
+			}
+			query = query.Where(project+" = ?", models.EngineDeploymentProject(filter.Scope))
 		}
 		if filter.EngineType != "" {
 			query = query.Where("engine_type = ?", filter.EngineType)
@@ -174,7 +187,11 @@ func (r *EngineDeploymentRepository) Save(ctx context.Context, value *models.Eng
 			return commonapi.ErrBadRequest
 		}
 		var now time.Time
-		if err := tx.Raw("SELECT statement_timestamp()").Scan(&now).Error; err != nil {
+		clock := "SELECT statement_timestamp()"
+		if tx.Dialector.Name() == "mysql" {
+			clock = "SELECT CURRENT_TIMESTAMP(6)"
+		}
+		if err := tx.Raw(clock).Scan(&now).Error; err != nil {
 			return err
 		}
 		value.Version, value.UpdatedAt = expected+1, now.UTC()
