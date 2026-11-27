@@ -284,7 +284,8 @@ def prepare(version, registry):
     build_names = sorted({name for name in owners.values() if name})
     compile_args = ["make", "build"]
     if selection(env)["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway":
-        compiled = [name for name in build_names if name == "gateway" or name.endswith(("-backend", "-worker"))]
+        go_services = set(output(["bash", "scripts/build/compile.sh", "--list-services"], env).splitlines())
+        compiled = [name for name in build_names if name in go_services]
         compile_args.append("BUILD_ARGS=--services " + ",".join(compiled))
     execute(compile_args, env)
     execute(["make", "build-images", "IMAGE_BUILD_ARGS=" + shlex.join([

@@ -9,6 +9,41 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+SERVICES=(
+    "system-backend:system/backend"
+    "manager-backend:manager/backend"
+    "meta-backend:meta/backend"
+    "meta-worker:meta/backend"
+    "transfer-backend:transfer/backend"
+    "transfer-bounded-worker:transfer/backend"
+    "transfer-continuous-worker:transfer/backend"
+    "orchestrator-backend:orchestrator/backend"
+    "develop-backend:develop/backend"
+    "service-backend:service/backend"
+    "monitor-backend:monitor/backend"
+    "standard-backend:standard/backend"
+    "model-backend:model/backend"
+    "quality-backend:quality/backend"
+    "quality-worker:quality/backend"
+    "security-backend:security/backend"
+    "security-worker:security/backend"
+    "asset-backend:asset/backend"
+    "catalog-backend:catalog/backend"
+    "ontology-backend:ontology/backend"
+    "workbench-backend:workbench/backend"
+    "portal-backend:portal/backend"
+    "graph-backend:graph/backend"
+    "inference-backend:inference/backend"
+    "gateway:gateway"
+    "runtime-log:common"
+)
+
+# Release selection uses the same registry as the compiler.
+if [[ $# -eq 1 && "$1" == --list-services ]]; then
+    printf '%s\n' "${SERVICES[@]%%:*}"
+    exit 0
+fi
+
 ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
 MULTI_ARCH=false
 FORCE_REBUILD=false
@@ -207,34 +242,6 @@ compile_service() {
     fi
 }
 
-SERVICES=(
-    "system-backend:system/backend"
-    "manager-backend:manager/backend"
-    "meta-backend:meta/backend"
-    "meta-worker:meta/backend"
-    "transfer-backend:transfer/backend"
-    "transfer-bounded-worker:transfer/backend"
-    "transfer-continuous-worker:transfer/backend"
-    "orchestrator-backend:orchestrator/backend"
-    "develop-backend:develop/backend"
-    "service-backend:service/backend"
-    "monitor-backend:monitor/backend"
-    "standard-backend:standard/backend"
-    "model-backend:model/backend"
-    "quality-backend:quality/backend"
-    "quality-worker:quality/backend"
-    "security-backend:security/backend"
-    "security-worker:security/backend"
-    "asset-backend:asset/backend"
-    "catalog-backend:catalog/backend"
-    "ontology-backend:ontology/backend"
-    "workbench-backend:workbench/backend"
-    "portal-backend:portal/backend"
-    "graph-backend:graph/backend"
-    "inference-backend:inference/backend"
-    "gateway:gateway"
-    "runtime-log:common"
-)
 if [ "$SELECTED_SERVICES" != all ]; then
     IFS=',' read -ra selected <<< "$SELECTED_SERVICES"
     [ "${#selected[@]}" -gt 0 ] || { echo "--services must name at least one service" >&2; exit 1; }
