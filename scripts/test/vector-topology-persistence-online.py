@@ -91,6 +91,119 @@ def validate_input_failure(execution, spec, identifier, *, node_index=1):
     return details
 
 
+PROCESS_DIAGNOSTIC = ('missing-group', 'dissolve', 'operator_group_fields_invalid', 'group_fields', '')
+PROCESS_VIEW = {
+    'nodes': [
+        {'id': 'load_source', 'operator': 'load', 'status': 'observed'},
+        {'id': 'dissolve', 'operator': 'dissolve', 'status': 'failed'},
+        {'id': 'measure', 'operator': 'get_area', 'status': 'unknown'},
+    ],
+    'definition_links': [
+        {'from_node': 'load_source', 'to_node': 'dissolve', 'input_parameter': 'input_gdf'},
+        {'from_node': 'dissolve', 'output_port': 'result', 'to_node': 'measure', 'input_parameter': 'input_gdf'},
+    ],
+}
+
+
+def process_failure_definition(locator):
+    return {'tasks': [
+        {'id': 'load_source', 'operator': 'load', 'depends_on': [], 'params': {'locator': locator}},
+        {'id': 'dissolve', 'operator': 'dissolve', 'depends_on': ['load_source'],
+         'params': {'input_gdf': {'$ref': 'load_source'}, 'id_field': 'parcel_key',
+                    'group_fields': ['PRIVATE_PROCESS_MISSING_GROUP']}},
+        {'id': 'measure', 'operator': 'get_area', 'depends_on': ['dissolve'],
+         'params': {'input_gdf': {'$ref': 'dissolve', 'port': 'result'}}},
+    ]}
+
+
+def validate_process_failure(execution, logs_response, definition, identifier, principal):
+    details = validate_input_failure(execution, PROCESS_DIAGNOSTIC, identifier, node_index=2)
+    if 'PRIVATE_PROCESS_MISSING_GROUP' in json.dumps(details):
+        raise SuiteError('workflow process leaked the private group field')
+    frozen = obj(obj(execution.get('execution_config'), 'execution config').get('content'), 'execution content')
+    if (type(execution.get('triggered_by')) is not int or execution['triggered_by'] != principal
+            or execution.get('source_task_id') is not None or execution.get('task_type') != 'workflow'
+            or frozen.get('workflow_definition') != definition or execution.get('workflow_process') != PROCESS_VIEW):
+        raise SuiteError('workflow process actor, frozen definition or projection differs')
+    logs = array(logs_response.get('logs'), 'workflow process logs')
+    progress = [log.get('task_id') for log in logs if log.get('event') == 'task_progress']
+    if (logs_response.get('execution_id') != identifier or len(logs) < 4
+            or logs[0].get('event') != 'workflow_started' or logs[-1].get('event') != 'workflow_failed'
+            or any(log.get('event') != 'task_progress' for log in logs[1:-1])
+            or set(progress) != {'load_source', 'dissolve'} or progress[0] != 'load_source'
+            or progress[-1] != 'dissolve'):
+        raise SuiteError('workflow process requires Runtime evidence for load and dissolve only')
+
+
+def run_process_failure(repository, env, client, physical_runner, browser_runner):
+    tenant = positive(env['ADDP_ONLINE_TEST_TENANT_ID'], 'workflow process tenant')
+    if tenant <= 1:
+        raise SuiteError('workflow process requires a non-default Tenant')
+    identity = raster.validate_identity(client, tenant, required_permissions=PERMISSIONS)
+    deadline = time.monotonic() + float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
+    engine = positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'], 'NFS engine')
+    name = fixture.PROCESS_SOURCE
+    scope = f'addp://engine/{engine}/path/{name}?type=file'
+    scan = support.wait_for_meta_scan(client, engine, deadline, scope={'targets': [scope]})
+    item = support.find_fixture_item(client, engine, name, 'workflow process source')
+    path = f'/api/v1/meta/items/{item["id"]}'
+    meta = client.request('GET', path, (200,)).payload
+    runtime_list = array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
+    runtimes = [r for r in runtime_list if r.get('engine_type') == 'geopython_workflow' and r.get('connection_status') == 'online']
+    if len(runtimes) != 1:
+        raise SuiteError('workflow process requires one online product Runtime')
+    runtime = positive(runtimes[0]['id'], 'Runtime')
+    tasks_path = '/api/v1/develop/task-definitions?page=1&page_size=50&dev_type=workflow'
+    tasks = client.request('GET', tasks_path, (200,)).payload
+    executions = workflow_execution_inventory(client)
+    scans = scan_ids(client)
+    native = physical_runner(repository, env)
+    size = native.get('sources', {}).get(name, {}).get('size_bytes')
+    if (scans != [scan] or tasks.get('total') != 0 or tasks.get('items') not in (None, [])
+            or native.get('exact_inventory_verified') is not True or set(native.get('sources', {})) != {name}
+            or native.get('targets') != {} or type(size) is not int or size <= 0
+            or type(meta.get('size_bytes')) is not int or meta['size_bytes'] != size):
+        raise SuiteError('workflow process preflight inventory differs')
+    definition = process_failure_definition(scope + f'&item_id={item["id"]}')
+    checkpoint_path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-workflow-process-checkpoint.json'
+    case = fixture.PROCESS_CASE
+    checkpoint = {'case': case, 'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'result': 'incomplete',
+                  'identity': identity, 'definition': definition, 'source_meta': meta, 'physical': native,
+                  'initial_execution_inventory': executions, 'initial_scan_inventory': scans, 'initial_task_inventory': tasks}
+    def persist(stage):
+        checkpoint['stage'] = stage
+        checkpoint_path.write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2) + '\n')
+
+    if deadline - time.monotonic() <= 0:
+        raise SuiteError('workflow process preflight exceeded the business budget')
+    persist('before_single_submission')
+    identifier = raster.submit(client, runtime, definition)
+    checkpoint['execution_id'] = identifier
+    persist('submitted')
+    execution = raster.wait_execution(client, 'develop', identifier, deadline - time.monotonic(), expected='failed')
+    checkpoint['execution'] = execution
+    persist('terminal')
+    logs = client.request('GET', f'/api/v1/develop/executions/{identifier}/logs', (200,)).payload
+    checkpoint['logs'] = logs
+    persist('before_browser')
+    validate_process_failure(execution, logs, definition, identifier, positive(identity['principal_id'], 'User'))
+    evidence = {'case': case, 'run_id': checkpoint['run_id'], **identity, 'execution_id': identifier,
+                'process': execution['workflow_process'], 'logs': logs, 'error_details': execution['error_details']}
+    report = browser_runner(repository, env, evidence)
+    final_executions = workflow_execution_inventory(client)
+    final_tasks = client.request('GET', tasks_path, (200,)).payload
+    final_scans = scan_ids(client)
+    final_native = physical_runner(repository, env)
+    final_meta = client.request('GET', path, (200,)).payload
+    if (final_executions != sorted([*executions, identifier]) or final_tasks != tasks or final_scans != scans
+            or final_native != native or final_meta != meta or time.monotonic() >= deadline):
+        raise SuiteError('workflow process final inventories or business budget differ')
+    return {**checkpoint, 'schema_version': fixture.PROCESS_SCHEMA + '/v1', 'result': 'passed',
+            'stage': 'complete', 'browser': report, 'execution_inventory': final_executions,
+            'task_inventory': final_tasks, 'scan_inventory': final_scans, 'post_browser_physical': final_native,
+            'after_source_meta': final_meta}
+
+
 def run_diagnostic_scenario(repository, env, client, physical_runner, browser_runner):
     case=fixture.topology_case(env);profile=fixture.network_profile(case);specs=input_diagnostic_specs(case)
     source_names=profile['diagnostic_sources'];schema=profile['schema']
@@ -487,13 +600,13 @@ DISSOLVE_ENTRY_REJECTION = 'dissolve-groups-type'
 DISSOLVE_RUNTIME_FAILURES = tuple(spec for spec in fixture.DISSOLVE_FAILURES if spec[0] != DISSOLVE_ENTRY_REJECTION)
 
 
-def dissolve_execution_inventory(client):
+def workflow_execution_inventory(client):
     response = obj(client.request('GET', '/api/v1/develop/executions?page=1&page_size=50&dev_type=workflow',
-                                  (200,)).payload, 'dissolve execution inventory')
-    ids = [entry.get('execution_id') for entry in array(response.get('executions'), 'dissolve execution list')]
+                                  (200,)).payload, 'workflow execution inventory')
+    ids = [entry.get('execution_id') for entry in array(response.get('executions'), 'workflow execution list')]
     if (type(response.get('total')) is not int or response['total'] != len(ids)
             or any(not isinstance(value, str) or not value for value in ids) or len(ids) != len(set(ids))):
-        raise SuiteError('dissolve execution inventory is incomplete')
+        raise SuiteError('workflow execution inventory is incomplete')
     return sorted(ids)
 
 
@@ -627,7 +740,7 @@ def run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,p
         if key == DISSOLVE_ENTRY_REJECTION:
             source_graph_path = f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={sources[spec[1]]["id"]}&direction=downstream'
             before_graph = obj(client.request('GET', source_graph_path, (200,)).payload, 'before dissolve entry rejection')
-            before_ids = dissolve_execution_inventory(client)
+            before_ids = workflow_execution_inventory(client)
             if before_ids != sorted(entry['execution_id'] for entry in [*successes, *checkpoint['failures']]):
                 raise SuiteError('dissolve entry rejection starts with an unexpected execution inventory')
             publication.before_submit(identity, engine, runtime, sources, definition, failure=key)
@@ -635,7 +748,7 @@ def run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,p
             response = client.request('POST', '/api/v1/develop/executions', (400,),
                                       raster.workflow_submission_payload(runtime, definition))
             validate_dissolve_entry_rejection(response)
-            if (dissolve_execution_inventory(client) != before_ids or scan_ids(client) != expected_scans
+            if (workflow_execution_inventory(client) != before_ids or scan_ids(client) != expected_scans
                     or physical_runner(repository, env) != native or before_graph.get('truncated') is not False
                     or client.request('GET', source_graph_path, (200,)).payload != before_graph):
                 raise SuiteError('dissolve entry rejection changed execution, scan, physical or lineage facts')
@@ -655,7 +768,7 @@ def run_prepared_dissolve(repository,env,client,physical_runner,browser_runner,p
         checkpoint['failures'].append({'key':key,'execution_id':identifier,'definition':definition,'execution':execution,'monitor':monitor,'expected_diagnostic':dissolve_diagnostic(spec),'source_lineage':graph,'meta_after':unchanged_meta()});persist('failure_'+key+'_verified')
     execution_ids = sorted({entry['execution_id'] for entry in [*successes, *checkpoint['failures']]})
     if (len(execution_ids) != 2 + len(DISSOLVE_RUNTIME_FAILURES)
-            or dissolve_execution_inventory(client) != execution_ids or 'entry_rejection' not in checkpoint):
+            or workflow_execution_inventory(client) != execution_ids or 'entry_rejection' not in checkpoint):
         raise SuiteError('dissolve requires two successful executions, seven failed executions and one entry rejection')
     persist('before_browser')
     evidence={'case':case,'run_id':env['ADDP_ONLINE_TEST_RUN_ID'],**identity,'sources':sources,'successes':successes,'outputs':outputs,'failures':checkpoint['failures']}
@@ -2475,6 +2588,8 @@ def run_scenario(repository, env, client, physical_runner=physical, browser_runn
         return run_difference_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.DISSOLVE_CASE:
         return run_dissolve_scenario(repository,env,client,physical_runner,browser_runner)
+    if fixture.topology_case(env) == fixture.PROCESS_CASE:
+        return run_process_failure(repository, env, client, physical_runner, browser_runner)
     if fixture.topology_case(env)==fixture.OVERLAY_CASE:
         return run_overlay_scenario(repository,env,client,physical_runner,browser_runner)
     if fixture.topology_case(env)==fixture.NODES_CASE:

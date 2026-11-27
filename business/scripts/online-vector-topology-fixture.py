@@ -1129,7 +1129,26 @@ def dissolve_worker(action,root,*,publication_staging=False):
         'targets':{n:verify_dissolve(root/'outputs'/n,n.removesuffix('.gpkg'))for n in targets},'exact_inventory_verified':True}
 
 
-INDEPENDENT_CASES = (COMPONENTS_CASE, ADJACENCY_CASE, VERTICES_CASE, DIFFERENCE_CASE, DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
+PROCESS_CASE = 'workflow-process-failure'
+PROCESS_SOURCE = RINGS_SOURCES[0]
+PROCESS_SCHEMA = 'addp.workflow-process-failure'
+PROCESS_TITLE = '同一普通用户执行核对加工过程定义连线和实际节点证据'
+
+
+def process_worker(action, root):
+    if action == 'seed':
+        if (root / PROCESS_SOURCE).exists():
+            raise FixtureError('refusing an existing workflow process source')
+        seed_rings(root / PROCESS_SOURCE, 'source')
+    elif action != 'verify':
+        raise FixtureError('unknown workflow process action')
+    if sorted(p.name for p in root.iterdir()) != sorted(('.addp-online-owner', 'outputs', PROCESS_SOURCE)) or list((root / 'outputs').iterdir()):
+        raise FixtureError('workflow process requires one source and no physical publication')
+    verify_rings(root / PROCESS_SOURCE, 'source')
+    return {'sources': {PROCESS_SOURCE: digest(root / PROCESS_SOURCE)}, 'targets': {}, 'exact_inventory_verified': True}
+
+
+INDEPENDENT_CASES = (PROCESS_CASE, COMPONENTS_CASE, ADJACENCY_CASE, VERTICES_CASE, DIFFERENCE_CASE, DISSOLVE_CASE, OVERLAY_CASE, NODES_CASE, TRIM_CASE, RINGS_DIAGNOSTIC_CASE, RINGS_CASE, ENDPOINT_CASE, EXTENSION_CASE, PROXIMITY_CASE, DIAGNOSTIC_CASE, BUFFER_CASE, 'line-network-normalize', 'line-network-normalize-chains')
 
 NORMALIZE_CASE = 'line-network-normalize'
 NORMALIZE_SOURCE = 'normalize-input.gpkg'
@@ -1143,6 +1162,8 @@ COMPOSITION_TARGETS = ('chains.gpkg','chain-edges.gpkg','edge-sources.gpkg')
 
 
 def network_profile(case):
+    if case == PROCESS_CASE:
+        return {'sources': (PROCESS_SOURCE,), 'targets': (), 'schema': PROCESS_SCHEMA, 'title': PROCESS_TITLE}
     if case==COMPONENTS_CASE:return {"ports":("result",),"targets":(COMPONENTS_TARGET,),"sources":COMPONENTS_SOURCES,"schema":COMPONENTS_SCHEMA,"title":COMPONENTS_TITLE}
     if case==ADJACENCY_CASE:return {"ports":("result",),"targets":(ADJACENCY_TARGET,),"sources":ADJACENCY_SOURCES,"schema":ADJACENCY_SCHEMA,"title":ADJACENCY_TITLE}
     if case==VERTICES_CASE:return {"ports":VERTICES_FAMILIES,"targets":VERTICES_TARGETS,"sources":VERTICES_SOURCES,"schema":VERTICES_SCHEMA,"title":VERTICES_TITLE}
@@ -2525,6 +2546,7 @@ def worker(action, root, case=None, *, publication_staging=False):
     if case==ADJACENCY_CASE:return adjacency_worker(action,root)
     if case==VERTICES_CASE:return vertices_worker(action,root,publication_staging=publication_staging)
     if case==DIFFERENCE_CASE:return difference_worker(action,root)
+    if case == PROCESS_CASE:return process_worker(action, root)
     if case==DISSOLVE_CASE:return dissolve_worker(action,root,publication_staging=publication_staging)
     if case==OVERLAY_CASE:return overlay_worker(action,root)
     if case==NODES_CASE:return nodes_worker(action,root,publication_staging=publication_staging)
@@ -2758,7 +2780,7 @@ def capture_publication(env, phase):
 def archive_physical_evidence(root, directory, result, case=None, *, sources_only=False):
     """Retain only this synthetic fixture's verified bytes for offline audit."""
     case=topology_case() if case is None else topology_case({'ADDP_ONLINE_TOPOLOGY_CASE':case})
-    sources,targets=(COMPONENTS_SOURCES,(COMPONENTS_TARGET,)) if case==COMPONENTS_CASE else (ADJACENCY_SOURCES,(ADJACENCY_TARGET,)) if case==ADJACENCY_CASE else (VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result.get('targets', {}))) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
+    sources,targets=((PROCESS_SOURCE,),()) if case==PROCESS_CASE else (COMPONENTS_SOURCES,(COMPONENTS_TARGET,)) if case==COMPONENTS_CASE else (ADJACENCY_SOURCES,(ADJACENCY_TARGET,)) if case==ADJACENCY_CASE else (VERTICES_SOURCES,VERTICES_TARGETS) if case==VERTICES_CASE else (DIFFERENCE_SOURCES,(DIFFERENCE_TARGET,)) if case==DIFFERENCE_CASE else (DISSOLVE_SOURCES,tuple(result.get('targets', {}))) if case==DISSOLVE_CASE else (OVERLAY_SOURCES,(OVERLAY_TARGET,)) if case==OVERLAY_CASE else (NODES_SOURCES,NODES_TARGETS) if case==NODES_CASE else (TRIM_SOURCES,TRIM_TARGETS) if case==TRIM_CASE else (RINGS_DIAGNOSTIC_SOURCES,()) if case==RINGS_DIAGNOSTIC_CASE else (RINGS_SOURCES,(RINGS_TARGET,)) if case==RINGS_CASE else (ENDPOINT_SOURCES,ENDPOINT_TARGETS) if case==ENDPOINT_CASE else (EXTENSION_SOURCES,EXTENSION_TARGETS) if case==EXTENSION_CASE else (PROXIMITY_SOURCES,(PROXIMITY_TARGET,)) if case==PROXIMITY_CASE else (DIAGNOSTIC_SOURCES,()) if case==DIAGNOSTIC_CASE else (BUFFER_SOURCES,BUFFER_TARGETS) if case==BUFFER_CASE else ((network_profile(case)['source'],),network_profile(case)['targets']) if case in (NORMALIZE_CASE,COMPOSITION_CASE) else (SOURCES,TARGETS)
     if sources_only:
         targets=()
     archive = directory / 'topology-physical'

@@ -1046,7 +1046,7 @@ await assert.rejects(run(expected,'EPSG:4326'),{code:'ERR_ASSERTION'})
         import os
         repository=Path(__file__).resolve().parents[2]
         run=m.subprocess.run
-        titles={m.fixture.VERTICES_CASE:m.fixture.VERTICES_TITLE,m.fixture.RINGS_DIAGNOSTIC_CASE:m.fixture.RINGS_DIAGNOSTIC_TITLE,m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
+        titles={m.fixture.PROCESS_CASE:m.fixture.PROCESS_TITLE,m.fixture.VERTICES_CASE:m.fixture.VERTICES_TITLE,m.fixture.RINGS_DIAGNOSTIC_CASE:m.fixture.RINGS_DIAGNOSTIC_TITLE,m.fixture.RINGS_CASE:m.fixture.RINGS_TITLE,m.fixture.ENDPOINT_CASE:m.fixture.ENDPOINT_TITLE,m.fixture.EXTENSION_CASE:m.fixture.EXTENSION_TITLE,m.fixture.PROXIMITY_CASE:m.fixture.PROXIMITY_TITLE,m.fixture.DIAGNOSTIC_CASE:m.fixture.DIAGNOSTIC_TITLE,m.fixture.BUFFER_CASE:'多距缓冲独立普通User单成果与重名拒绝',m.fixture.NORMALIZE_CASE:'重合规整独立普通User双成果与字段拒绝',
             m.fixture.COMPOSITION_CASE:'重合规整链路合并独立普通User三成果与字段拒绝',
             'full':'同一普通User核对构面、修复、严格吸附、面叠面缝悬点线叠自叠线交自交及打断连通分组链路合并地图及塌缩失败'}
         for case,title in titles.items():
@@ -4297,3 +4297,49 @@ class PolygonComponentsOnlineTest(unittest.TestCase):
         def specs(suites):
             return [v for suite in suites for v in [*suite.get('specs',[]),*specs(suite.get('suites',[]))]]
         self.assertEqual([v['title'] for v in specs(json.loads(result.stdout)['suites'])],[m.fixture.COMPONENTS_TITLE])
+
+
+class WorkflowProcessFailureOnlineTest(unittest.TestCase):
+    def setUp(self):
+        self.definition = m.process_failure_definition('addp://engine/3/path/rings-source.gpkg?type=file&item_id=8')
+        self.execution = {
+            'execution_id': 'run-once', 'triggered_by': 4, 'status': 'failed', 'task_type': 'workflow',
+            'execution_config': {'content': {'workflow_definition': self.definition}},
+            'error_details': {'code': 'develop.workflow.invalid_params',
+                              'diagnostic': m.expected_input_diagnostic(m.PROCESS_DIAGNOSTIC, node_index=2)},
+            'workflow_process': copy.deepcopy(m.PROCESS_VIEW),
+            'metadata': {},
+        }
+        self.logs = {'execution_id': 'run-once', 'logs': [
+            {'event': 'workflow_started'},
+            {'event': 'task_progress', 'task_id': 'load_source'},
+            {'event': 'task_progress', 'task_id': 'dissolve'},
+            {'event': 'workflow_failed'},
+        ]}
+
+    def test_one_failed_execution_keeps_frozen_links_and_no_downstream_evidence(self):
+        self.assertEqual([task['operator'] for task in self.definition['tasks']], ['load', 'dissolve', 'get_area'])
+        m.validate_process_failure(self.execution, self.logs, self.definition, 'run-once', 4)
+        self.assertFalse(m.fixture.capture_enabled({'ADDP_ONLINE_HOSTED':'1'}, m.fixture.PROCESS_CASE))
+        self.assertEqual(m.fixture.network_profile(m.fixture.PROCESS_CASE)['targets'], ())
+
+    def test_wrong_evidence_or_task_or_produced_output_is_rejected(self):
+        for mutation in ('link', 'node', 'logs', 'different-run', 'saved-task', 'output', 'actor'):
+            with self.subTest(mutation=mutation):
+                execution, logs = copy.deepcopy((self.execution, self.logs))
+                if mutation == 'link':
+                    execution['workflow_process']['definition_links'][1]['output_port'] = 'members'
+                elif mutation == 'node':
+                    execution['workflow_process']['nodes'][2]['status'] = 'observed'
+                elif mutation == 'logs':
+                    logs['logs'].insert(-1, {'event': 'task_progress', 'task_id': 'measure'})
+                elif mutation == 'different-run':
+                    logs['execution_id'] = 'another'
+                elif mutation == 'saved-task':
+                    execution['source_task_id'] = '42'
+                elif mutation == 'output':
+                    execution['metadata']['lineage_facts'] = {'outputs': ['result.gpkg']}
+                else:
+                    execution['triggered_by'] = 9
+                with self.assertRaises(m.SuiteError):
+                    m.validate_process_failure(execution, logs, self.definition, 'run-once', 4)

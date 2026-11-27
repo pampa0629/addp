@@ -2367,6 +2367,8 @@ class OnlineCIRegistrationTest(unittest.TestCase):
         registered = {'vector-topology-persistence'}
         CHECK.validate_vector_topology_profile(self.repository, registered)
         for relative, fragment in self.contract_mutations(((paths[0], "inputs.suite != 'vector-topology-persistence'"),
+            (paths[0], '          - workflow-process-failure'), (paths[3], 'workflow-process-failure|vertex-extraction'),
+            (paths[4], 'def validate_process_failure('), (paths[7], 'topology-workflow-process-browser-raw.json'),
             (paths[0], '          - polygon-components'), (paths[3], '|polygon-components)'),
             (paths[5], 'def components_features('), (paths[4], 'def components_definition('),
             (paths[7], 'assertComponentsPolygonPixels('), (paths[8], 'case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay", "line-nodes", "vertex-extraction", "polygon-dissolve":'),

@@ -2215,3 +2215,74 @@ test('面连通分组独立普通User单源面成果及六失败保护',async({p
   test.setTimeout(Math.floor(seconds*1000))
   await verifyMixedOverlayCase(page,'polygon-components')
 })
+
+test('同一普通用户执行核对加工过程定义连线和实际节点证据', async ({ page }) => {
+  const evidence = readTopologyEvidence()
+  const directory = process.env.ADDP_ONLINE_ARTIFACT_DIR
+  expect(evidence.case).toBe('workflow-process-failure')
+  const id = evidence.execution_id
+  const executionPath = `/api/v1/develop/executions/${id}`
+  const read = path => page.waitForResponse(response =>
+    response.request().method() === 'GET' && new URL(response.url()).pathname === path)
+  const writes = []
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method()) && /^\/api\/v1\/(develop|meta|manager)\//.test(path)) {
+      writes.push({ method: request.method(), path })
+    }
+  })
+  const detailRead = read(executionPath)
+  const logsRead = read(executionPath + '/logs')
+  await login(page, process.env.ADDP_ONLINE_TEST_USER_USERNAME, process.env.ADDP_ONLINE_TEST_USER_PASSWORD,
+    `/develop/executions/${id}?tab=process`)
+  const response = await detailRead
+  const identity = { principalID: evidence.principal_id, tenantID: evidence.tenant_id, permissions: evidence.permissions_verified }
+  const api = await browserAPIFromResponse(response, process.env.GATEWAY_URL, identity)
+  let execution
+  try {
+    execution = await json(response, 'workflow process execution')
+    expect(execution.execution_id).toBe(id)
+    expect(execution.status).toBe('failed')
+    expect(execution.workflow_process).toEqual(evidence.process)
+    expect(execution.error_details).toEqual(evidence.error_details)
+  } finally {
+    await api.dispose()
+  }
+  const frame = page.frameLocator('iframe[data-testid="module-iframe"]')
+  await frame.getByRole('tab', { name: '加工过程', exact: true }).click()
+  const expectedNodes = [
+    ['load_source', 'load', '有运行记录'],
+    ['dissolve', 'dissolve', '算子执行失败'],
+    ['measure', 'get_area', '无运行证据'],
+  ]
+  const expectedLinks = [
+    ['load_source', '由运行时选择', 'dissolve', 'input_gdf'],
+    ['dissolve', 'result', 'measure', 'input_gdf'],
+  ]
+  async function table(name, expected) {
+    const rows = frame.getByTestId(name).locator('tbody tr')
+    const cells = () => rows.evaluateAll(elements =>
+      elements.map(row => Array.from(row.cells, cell => cell.textContent.trim())))
+    await expect.poll(cells).toEqual(expected)
+    return cells()
+  }
+  const nodes = await table('workflow-process-nodes', expectedNodes)
+  const links = await table('workflow-process-links', expectedLinks)
+  await expect(frame.getByText('以下连线来自本次执行快照，表示定义中的数据引用。实际节点状态见上表。', { exact: true })).toBeVisible()
+  await page.screenshot({ path: resolve(directory, 'topology-workflow-process.png') })
+
+  await frame.getByRole('tab', { name: '执行日志', exact: true }).click()
+  const logs = await json(await logsRead, 'workflow process logs')
+  expect(logs).toEqual(evidence.logs)
+  const timeline = frame.locator('#pane-logs .el-timeline-item')
+  await expect(timeline).toHaveCount(logs.logs.length)
+  await expect(timeline.last()).toContainText('工作流执行失败')
+  await expect(timeline.filter({ hasText: 'dissolve' })).not.toHaveCount(0)
+  await expect(timeline.filter({ hasText: 'measure' })).toHaveCount(0)
+  expect(writes).toEqual([])
+  await page.screenshot({ path: resolve(directory, 'topology-workflow-process-logs.png') })
+  writeFileSync(resolve(directory, 'topology-workflow-process-browser-raw.json'),
+    JSON.stringify({ execution, logs, nodes, links, writes }, null, 2) + '\n')
+  writeFileSync(resolve(directory, 'topology-browser.json'),
+    JSON.stringify({ ...evidence, schema_version: 'addp.workflow-process-failure-browser/v1', result: 'passed' }, null, 2) + '\n')
+})

@@ -267,6 +267,7 @@ on:
           - geometry-difference
           - polygon-dissolve
           - intersection-overlay
+          - workflow-process-failure
       raster_case:
         description: Raster acceptance scope (branch-lineage runs only its selected case)
         required: true
@@ -2834,7 +2835,7 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.topology_source_commit }}
           TOPOLOGY_CASE: ${{ inputs.topology_case }}
         run: |
-          if [[ "$TOPOLOGY_CASE" == geometry-difference || "$TOPOLOGY_CASE" == polygon-components ]]; then
+          if [[ "$TOPOLOGY_CASE" == geometry-difference || "$TOPOLOGY_CASE" == polygon-components || "$TOPOLOGY_CASE" == workflow-process-failure ]]; then
             [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'This topology case requires a full lowercase source SHA' >&2; exit 1; }
           else
             [[ -z "$SOURCE_COMMIT" || "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo 'Topology source must be a full lowercase SHA' >&2; exit 1; }
