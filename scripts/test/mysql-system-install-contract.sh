@@ -184,6 +184,13 @@ grep -q '^--- PASS: TestEngineAddressObservationAgainstMySQL ' "$work/engine-obs
 (cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_GLOBAL_SETTINGS="$expected_settings" GOWORK=off go test ./internal/infraconfig -run '^TestMySQLReadOnlyInstanceConfiguration$' -count=1 -v) | tee "$work/readonly-mysql-settings.log"
 grep -q '^--- PASS: TestMySQLReadOnlyInstanceConfiguration ' "$work/readonly-mysql-settings.log"
 (cd "$(dirname "$0")/../../system/backend" && ADDP_TEST_MYSQL_TENANT_FACTS="$work/tenant.json" GOWORK=off go test ./internal/migration -run '^TestPrepareMySQLGatewayTenant$' -count=1 -v)
+(
+    cd "$(dirname "$0")/../../system/backend"
+    unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+    ADDP_TEST_MYSQL_ONTOLOGY_AUTHORIZATION=1 GOWORK=off go test ./internal/migration \
+        -run '^TestMySQLOntologyProjectionAuthorization$' -count=1 -v
+) | tee "$work/ontology-projection-authorization.log"
+grep -q '^--- PASS: TestMySQLOntologyProjectionAuthorization ' "$work/ontology-projection-authorization.log"
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
 test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
