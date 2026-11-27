@@ -179,8 +179,12 @@ class HostedMySQLReleaseTest(unittest.TestCase):
                                      for level, body in [("info", {"msg": "routine"}), ("error", first_error),
                                                          ("error", {"msg": "subsequent error"})]))
             result = subprocess.check_output([sys.executable, "-c", collector, str(root), str(env_file)], text=True)
+            wrapper = root / "wrapper.log"
+            wrapper.write_text("routine output\nfork/exec /app/runtime-log: permission denied\nsecond error\n")
+            direct = subprocess.check_output([sys.executable, "-c", collector, str(root), str(env_file), str(wrapper)], text=True)
         self.assertEqual(json.loads(result), {"system/backend": {"message": "Database initialization failed",
                          "error": "rejected [REDACTED] and [REDACTED]"}})
+        self.assertEqual(json.loads(direct), {"message": "fork/exec /app/runtime-log: permission denied"})
 
     def test_manual_hosted_gate_shell_and_python_syntax(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"

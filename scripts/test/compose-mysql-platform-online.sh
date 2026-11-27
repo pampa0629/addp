@@ -76,24 +76,12 @@ fi
 infra_started=false
 release_started=false
 full_network_id=
+direct_system_id=
 stage=fixture
-full_startup_diagnostics() {
-  local system_id schema revisions
-  system_id=$("${app[@]}" ps -aq system-backend) || return 1
-  if [[ -n "$system_id" ]]; then
-    docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} {{if .State.Health}}health={{.State.Health.Status}} checks={{range .State.Health.Log}}{{.ExitCode}} {{end}}{{end}}' \
-      "$system_id" > "$artifacts/system-startup-state.txt"
-  fi
-  for schema in system common; do
-    if revisions=$(runtime <<<"SELECT owner, version, pending_version FROM \`$schema\`.startup_schema_revision ORDER BY owner" 2>/dev/null); then
-      printf '[%s]\n%s\n' "$schema" "$revisions"
-    else
-      printf '[%s]\nrevision_read_unavailable\n' "$schema"
-    fi
-  done > "$artifacts/bootstrap-mysql-versions.txt"
+startup_errors() {
   # runtime-log captures the child streams in the Runner-owned bind mount.
   # Its segments are private to the container UID and already redact secrets.
-  sudo -n python3 - "$PWD/logs/runtime" .env <<'PYSTARTUP' > "$artifacts/startup-errors.json"
+  sudo -n python3 - "$PWD/logs/runtime" .env "$@" <<'PYSTARTUP'
 import json
 from pathlib import Path
 import re
@@ -113,7 +101,33 @@ secrets.sort(key=len, reverse=True)
 def redact(text, limit):
     for secret in secrets:
         text = text.replace(secret, "[REDACTED]")
+    text = re.sub(r"(?i)(bearer\s+\S+|(?:password|secret|token|api_key)\s*[=:]\s*[^\s,;]+)", "[REDACTED]", text)
+    text = re.sub(r"(?i)(?:https?|postgres(?:ql)?|mysql|redis)://[^\s]+", "[REDACTED]", text)
     return text[:limit]
+
+def failure(line, allow_plain, declared_level=None):
+    try:
+        fields = json.loads(line)
+    except ValueError:
+        if allow_plain and re.search(r"(?i)error|fatal|panic|failed|invalid|permission denied|not found|refused|fork/exec|read-only|not permitted", line):
+            return {"message": redact(line.strip(), 400)}
+        return None
+    level = declared_level or (fields.get("level") if isinstance(fields, dict) else None)
+    if not isinstance(level, str) or level.lower() not in {"error", "fatal", "panic", "critical"}:
+        return None
+    message = fields.get("msg") or fields.get("message")
+    if not isinstance(message, str):
+        return None
+    details = {"message": redact(message, 320)}
+    if isinstance(fields.get("error"), str):
+        details["error"] = redact(fields["error"], 400)
+    return details
+
+if len(sys.argv) == 4:
+    with Path(sys.argv[3]).open() as stream:
+        result = next((details for line in stream if (details := failure(line, True))), {})
+    print(json.dumps(result, ensure_ascii=False))
+    sys.exit()
 
 errors = {}
 for path in sorted(root.glob("*/*/*.jsonl")):
@@ -123,15 +137,9 @@ for path in sorted(root.glob("*/*/*.jsonl")):
         for line in stream:
             try:
                 entry = json.loads(line)
-                if entry.get("level") != "error":
+                details = failure(entry["message"], entry.get("channel") == "stderr", entry.get("level"))
+                if details is None:
                     continue
-                fields = json.loads(entry["message"])
-                message = fields.get("msg") or fields.get("message")
-                if not isinstance(message, str):
-                    continue
-                details = {"message": redact(message, 320)}
-                if isinstance(fields.get("error"), str):
-                    details["error"] = redact(fields["error"], 400)
                 key = f'{entry["module_name"]}/{entry["role"]}'
                 errors.setdefault(key, details)
                 break
@@ -139,6 +147,24 @@ for path in sorted(root.glob("*/*/*.jsonl")):
                 continue
 print(json.dumps(errors, ensure_ascii=False))
 PYSTARTUP
+}
+full_startup_diagnostics() {
+  local system_id schema revisions
+  system_id=$("${app[@]}" ps -aq system-backend) || return 1
+  if [[ -n "$system_id" ]]; then
+    docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} {{if .State.Health}}health={{.State.Health.Status}} checks={{range .State.Health.Log}}{{.ExitCode}} {{end}}{{end}}' \
+      "$system_id" > "$artifacts/system-startup-state.txt"
+    docker logs --tail 60 "$system_id" > "$work/system-wrapper.log" 2>&1
+    startup_errors "$work/system-wrapper.log" > "$artifacts/system-wrapper-error.json"
+  fi
+  for schema in system common; do
+    if revisions=$(runtime <<<"SELECT owner, version, pending_version FROM \`$schema\`.startup_schema_revision ORDER BY owner" 2>/dev/null); then
+      printf '[%s]\n%s\n' "$schema" "$revisions"
+    else
+      printf '[%s]\nrevision_read_unavailable\n' "$schema"
+    fi
+  done > "$artifacts/bootstrap-mysql-versions.txt"
+  startup_errors > "$artifacts/startup-errors.json"
 }
 cleanup() {
   local status=$? cleanup_status=passed project remaining kind
@@ -149,6 +175,9 @@ cleanup() {
   fi
   if [[ "$release_started" == true && "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
     docker compose --env-file .env -f docker-compose.runtimes.yml down --volumes --remove-orphans || cleanup_status=failed
+  fi
+  if [[ -n "$direct_system_id" ]]; then
+    docker rm -fv "$direct_system_id" >/dev/null || cleanup_status=failed
   fi
   if [ "$release_started" = true ]; then
     if [[ "$status" != 0 && "$stage" == deploy ]]; then
@@ -528,7 +557,48 @@ write(work / "infra-images.yml", {"runtime-log-pruner": sys.argv[3]}, external_m
       printf "redis_auth=rejected\n"
     fi
   ' | tee "$artifacts/bootstrap-redis.txt"
-  "${app[@]}" up -d --wait --wait-timeout 120 system-backend
+  if "${app[@]}" up -d --wait --wait-timeout 120 system-backend; then
+    :
+  else
+    official_rc=$?
+    full_startup_diagnostics || true
+    stage=direct-system-diagnostic
+    "${app[@]}" stop system-backend
+    cat > "$work/direct-system.yml" <<'YAML'
+services:
+  system-backend:
+    entrypoint: [/app/server]
+    command: []
+    restart: "no"
+YAML
+    direct_system_id=$("${app[@]}" -f "$work/direct-system.yml" run -d --no-deps -T system-backend)
+    argv=$(docker inspect --format '{{.Path}} {{json .Args}}' "$direct_system_id")
+    [[ "$argv" == '/app/server []' || "$argv" == '/app/server null' ]]
+    deadline=$((SECONDS + 25))
+    direct_result=timeout
+    while (( SECONDS < deadline )); do
+      if [[ $(docker inspect --format '{{.State.Running}}' "$direct_system_id") != true ]]; then
+        direct_result=exited
+        break
+      fi
+      if docker exec "$direct_system_id" bash -ec '
+        exec 3<>/dev/tcp/127.0.0.1/8180
+        printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3
+        IFS= read -r -t 2 line <&3
+        [[ "$line" == *" 200 "* ]]
+      ' >/dev/null 2>&1; then
+        direct_result=ready
+        break
+      fi
+      sleep 1
+    done
+    printf 'result=%s\n' "$direct_result" > "$artifacts/direct-system-state.txt"
+    docker inspect --format 'state={{.State.Status}} exit={{.State.ExitCode}}' "$direct_system_id" \
+      >> "$artifacts/direct-system-state.txt"
+    docker logs --tail 60 "$direct_system_id" > "$work/direct-system.log" 2>&1
+    startup_errors "$work/direct-system.log" > "$artifacts/direct-system-error.json"
+    exit "$official_rc"
+  fi
 else
   # The image builder offers option 2 to use the Runner's existing Docker configuration.
   bash scripts/prod/deploy.sh "$GITHUB_SHA" <<<2
