@@ -225,24 +225,27 @@ class NewHostedWorkflowTest(unittest.TestCase):
         with self.assertRaisesRegex(m.SuiteError,'first oracle failed; oracle cleanup also failed'):self.run_case(worker=broken)
         self.assertEqual(actions,['oracle','cleanup-oracle'])
     def test_source_preparation_consumes_the_same_business_budget(self):
-        self.env['ADDP_ONLINE_FOCAL_PERCENTILES_STARTED'] = str(time.monotonic() - 75)
+        self.env['ADDP_ONLINE_FOCAL_PERCENTILES_STARTED'] = '1000'
         remaining = []
 
         def worker(repository, env, action, names, timeout):
             remaining.append(timeout)
             return physical(repository, env, action, names, timeout)
 
-        report = self.run_case(worker=worker)
-        self.assertLessEqual(remaining[0], 525)
-        self.assertGreaterEqual(report['elapsed_ms'], 75000)
+        with patch.object(m.time, 'monotonic', return_value=1075.0):
+            report = self.run_case(worker=worker)
+        self.assertEqual(remaining[0], 525)
+        self.assertEqual(report['elapsed_ms'], 75000)
 
     def test_expired_preparation_never_submits_a_workflow(self):
-        self.env['ADDP_ONLINE_FOCAL_PERCENTILES_STARTED'] = str(time.monotonic() - 601)
+        self.env['ADDP_ONLINE_FOCAL_PERCENTILES_STARTED'] = '1000'
         client = Client()
-        with self.assertRaisesRegex(m.SuiteError, 'business budget exhausted'):
-            self.run_case(client)
+        with patch.object(m.time, 'monotonic', return_value=1601.0):
+            with self.assertRaisesRegex(m.SuiteError, 'business budget exhausted'):
+                self.run_case(client)
         self.assertFalse(client.executions)
         self.assertFalse(client.scans)
+        self.assertFalse((self.root / 'evidence').exists())
 
     def test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced(self):
         for fault in ('diagnostic','query','scan','edge','identity','parent','budget','cleanup'):
