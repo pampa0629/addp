@@ -52,7 +52,8 @@ class Client:
                 with self.log_path.open('a', encoding='utf-8') as target:
                     target.write(json.dumps({'module_name': 'develop', 'role': 'backend', 'message': message})+'\n')
                 data = {'status': 'failed', 'execution_id': identifier, 'module': 'develop',
-                        'error_details': {'category': 'execution_failed'}, 'execution_config': {'display_language': language},
+                        'error_details': {'category': 'resource_exhausted' if language == 'zh-cn' else 'execution_failed'},
+                        'execution_config': {'display_language': language},
                         'outputs': {'save': {}} if self.fault == 'publish' else {}, 'metadata': {}}
                 if self.fault == 'scan': self.scans.append('bad-scan')
             else:
@@ -208,6 +209,22 @@ class DiskPressureOnlineTest(unittest.TestCase):
         self.assertEqual({x['source'] for x in result['failures']}, {'develop_runtime_log'})
         self.assertEqual(self.actions[-1], 'release')
         self.assertEqual(self.snapshots, 9)
+
+    def test_public_failure_category_matches_the_frozen_language(self):
+        for language, expected, other in (
+            ('zh-cn', 'resource_exhausted', 'execution_failed'),
+            ('en', 'execution_failed', 'resource_exhausted'),
+        ):
+            execution = {
+                'execution_id': 'exec-1', 'module': 'develop', 'status': 'failed', 'metadata': {},
+                'error_details': {'category': expected}, 'execution_config': {'display_language': language},
+            }
+            with self.subTest(language=language):
+                m.verify_failed_observation(execution, 'exec-1', language)
+                for category in (other, 'unknown', None):
+                    wrong = {**execution, 'error_details': {'category': category}}
+                    with self.assertRaises(m.SuiteError):
+                        m.verify_failed_observation(wrong, 'exec-1', language)
 
     def test_wrong_phase_language_publication_scan_actor_size_and_restart_are_not_accepted(self):
         for fault in ('phase', 'task', 'language', 'runtime-code', 'reread', 'publish', 'scan', 'actor', 'size', 'restart', 'source-actor', 'cleanup'):

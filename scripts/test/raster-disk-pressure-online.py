@@ -96,11 +96,15 @@ def read_failure_diagnostic(repository, env, identifier, phase, observation, lan
 
 
 def verify_failed_observation(execution, identifier, language):
+    # Common's public category matches the stored diagnostic text. The Chinese
+    # disk-pressure message matches the resource-exhausted rule.
+    expected_category = {'zh-cn': 'resource_exhausted', 'en': 'execution_failed'}[language]
     if ((execution.get('execution_id'), execution.get('module'), execution.get('status')) != (identifier, 'develop', 'failed')
         or 'error_msg' in execution
-        or obj(execution.get('error_details'), 'failed diagnostics').get('category') != 'execution_failed'
         or obj(execution.get('execution_config'), 'failed execution configuration').get('display_language') != language):
-        raise SuiteError('public pressure failure identity, language or diagnostic projection differs')
+        raise SuiteError('public pressure failure identity, language or raw error visibility differs')
+    if obj(execution.get('error_details'), 'failed diagnostics').get('category') != expected_category:
+        raise SuiteError(f'public pressure failure category differs for {language}: expected {expected_category}')
     metadata = obj(execution.get('metadata'), 'failed metadata')
     result = obj(metadata.get('result') or {}, 'failed result')
     facts = obj(metadata.get('lineage_facts') or {}, 'failed lineage facts')
