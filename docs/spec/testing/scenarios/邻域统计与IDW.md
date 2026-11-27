@@ -121,6 +121,8 @@
 
 ## 邻域多百分位独立保存验收
 
+**计时与正式验收。** 600 秒从源样例生成前起算，普通身份与引擎准备、首次期望、实际执行、全部物理复读和预期缓存清理共用同一截止时间。固定 `390b035a` 的 [Linux 全量](https://github.com/pampa0629/addp/actions/runs/45867435547/job/140073778039) 及 [Runner](https://github.com/pampa0629/addp/actions/runs/45867435547/job/140073777627) 仍按原源码认定。7×7 方窗归档覆盖部分多百分位结果，专项仍缺 16 份原 COG 及执行回执。当前夹具首扫使用普通执行账号，需确认隔离准备者的首扫及精确限时元数据读取范围后再安排正式运行。[共同准入](Manager与空间成果.md#独立持久化专项公共前提)
+
 独立手工 `raster-focal-percentiles-persistence`；`make test-raster-focal-percentiles-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。 Runtime保持4 CPU／2 GiB／无额外swap。
 
 16条COG链覆盖3／5方窗批量及逐项堆叠对照、两种方窗median、米制圆窗批量／堆叠／median、国际英尺／美制测量英尺圆窗、重分类、缺定位Int64／UInt64原生NoData邻接大整数、跨双块轴及全无效。请求列表固定[0,25,33.3,50,75,100]；逐项堆叠沿原空描述契约，批量波段严格核percentile描述和顺序。

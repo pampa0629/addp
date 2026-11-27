@@ -186,12 +186,20 @@ def current(execution, identity, identifier, dag, runtime, language, status):
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic, lineage_reader=lineage.read_current,
                  *, failed_reader=lineage.read_failed_execution,
                  inventory_reader=lineage.check_execution_inventory):
-    env = dict(env); started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
+    env = dict(env)
+    started = float(env['ADDP_ONLINE_FOCAL_PERCENTILES_STARTED'])
+    budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('multi-percentile business budget must be exactly 600 seconds')
+    if not 0 < started <= time.monotonic():
+        raise SuiteError('multi-percentile business start must bind source preparation')
+    deadline = started + budget
+
     def remaining():
-        left = budget-(time.monotonic()-started)
+        left = deadline - time.monotonic()
         if left <= 0: raise SuiteError('multi-percentile business budget exhausted')
         return left
+
+    remaining()
     client = BudgetClient(client, remaining); directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(parents=True, exist_ok=True); (directory/'focal-percentiles-terminal-responses').mkdir()
     stages = []; primary = cleanup_error = report = None
     def progress(status):

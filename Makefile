@@ -880,6 +880,7 @@ test-raster-focal-variety-online-runner: test-raster-lineage-observer-unit test-
 .PHONY: test-raster-focal-neighborhood-preparation
 test-raster-focal-neighborhood-preparation:
 	@python3 -m unittest scripts/test/raster-focal-circle-persistence-online_test.py scripts/test/raster-focal-circle-orthogonal-persistence-online_test.py scripts/test/raster-focal-square-seven-persistence-online_test.py
+	@python3 -m unittest scripts/test/raster-focal-percentiles-persistence-online_test.py scripts/test/online-hosted-raster-focal-percentiles-gate_test.py
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture -run 'RasterHostedSourcePreparation' -count=1
 
 .PHONY: test-raster-focal-circle-online-runner
