@@ -428,53 +428,7 @@ func exerciseGeoPackageGrant(t *testing.T, db *gorm.DB, service *Service, ctx co
 		return
 	}
 
-	principal, err := iam.NewRepository(db).GetPrincipal(ctx, reader.PrincipalID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	auth := &iam.ExecutionAuthorization{Audience: execution.AudienceDevelop, SourceType: "user", TenantID: actor.TenantID,
-		ActorPrincipalID: reader.PrincipalID, TenantMembershipID: reader.MembershipID, IssuedAuthorizationVersion: principal.AuthorizationVersion}
-	intent, err := execution.NewDevelopFileIntent([]byte(`{"fixture":true}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: target}}, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	check := func(want error) {
-		t.Helper()
-		prepared, err := service.PrepareDevelopFileRead(ctx, auth, *intent)
-		if err == nil {
-			if len(prepared.Scope.Sources) != 1 || prepared.Scope.Sources[0].BoundaryHash != input.ExpectedBoundaryHash {
-				t.Fatal("unexpected sealed source")
-			}
-			sealed := *auth
-			sealed.DevelopFileScope = prepared.Scope.Clone()
-			err = db.Transaction(func(tx *gorm.DB) error {
-				_, err := prepared.Verify(ctx, tx, &sealed, nil)
-				return err
-			})
-		}
-		if !errors.Is(err, want) {
-			t.Fatalf("Develop read qualification: got %v, want %v", err, want)
-		}
-	}
-	check(commonapi.ErrForbidden)
-	grant, err := service.CreateIndependentGrant(ctx, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stored authorizationfacts.FileCompositionBoundary
-	if err := json.Unmarshal(grant.FileComposition, &stored); err != nil || stored.Validate(target.EngineID) != nil || stored.Format != "geopackage" {
-		t.Fatal("GeoPackage composition was not persisted", err)
-	}
-	check(nil)
-	original := *current
-	current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
-	check(ErrAuthorizationBoundaryChanged)
-	*current = original
-	if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: grant.RequestID, Reason: "Withdraw GeoPackage"}); err != nil {
-		t.Fatal(err)
-	}
-	check(commonapi.ErrForbidden)
-
+	stored := exerciseDevelopFileGrant(t, db, service, ctx, input, reader, current)
 	ref := stored.Refs[0]
 	for _, invalid := range []struct {
 		name string
@@ -498,4 +452,66 @@ func exerciseGeoPackageGrant(t *testing.T, db *gorm.DB, service *Service, ctx co
 			}
 		})
 	}
+}
+
+func exerciseDevelopFileGrant(t *testing.T, db *gorm.DB, service *Service, ctx context.Context, input CreateIndependentGrantInput, reader userProvenance,
+	current *authorizationfacts.AuthorizationFacts) authorizationfacts.FileCompositionBoundary {
+	t.Helper()
+	target, actor := input.CatalogPath, input.Actor
+	principal, err := iam.NewRepository(db).GetPrincipal(ctx, reader.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := &iam.ExecutionAuthorization{Audience: execution.AudienceDevelop, SourceType: "user", TenantID: actor.TenantID,
+		ActorPrincipalID: reader.PrincipalID, TenantMembershipID: reader.MembershipID, IssuedAuthorizationVersion: principal.AuthorizationVersion}
+	intent, err := execution.NewDevelopFileIntent([]byte(`{"fixture":true}`), 1, 45, []execution.DevelopFileSourceIntent{{NodeID: "load", Target: target}}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepare := func() *iam.DevelopFileReadPreparation {
+		t.Helper()
+		prepared, err := service.PrepareDevelopFileRead(ctx, auth, *intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(prepared.Scope.Sources) != 1 || prepared.Scope.Sources[0].BoundaryHash != input.ExpectedBoundaryHash {
+			t.Fatal("unexpected sealed source")
+		}
+		return prepared
+	}
+	verify := func(prepared *iam.DevelopFileReadPreparation, want error) {
+		t.Helper()
+		sealed := *auth
+		sealed.DevelopFileScope = prepared.Scope.Clone()
+		err := db.Transaction(func(tx *gorm.DB) error {
+			_, err := prepared.Verify(ctx, tx, &sealed, nil)
+			return err
+		})
+		if !errors.Is(err, want) {
+			t.Fatalf("Develop read qualification: got %v, want %v", err, want)
+		}
+	}
+	verify(prepare(), commonapi.ErrForbidden)
+	grant, err := service.CreateIndependentGrant(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored authorizationfacts.FileCompositionBoundary
+	if err := json.Unmarshal(grant.FileComposition, &stored); err != nil || stored.Validate(target.EngineID) != nil || stored.Format != "geopackage" {
+		t.Fatal("GeoPackage composition was not persisted", err)
+	}
+	prepared := prepare()
+	verify(prepared, nil)
+	original := *current
+	current.BasisState, current.Boundary, current.BoundaryHash = authorizationfacts.AuthorizationBasisIncomplete, nil, nil
+	if _, err := service.PrepareDevelopFileRead(ctx, auth, *intent); !errors.Is(err, ErrAuthorizationBoundaryChanged) {
+		t.Fatalf("incomplete boundary: %v", err)
+	}
+	*current = original
+	if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(target.EngineID), RequestID: grant.RequestID, Reason: "Withdraw GeoPackage"}); err != nil {
+		t.Fatal(err)
+	}
+	verify(prepared, commonapi.ErrForbidden)
+
+	return stored
 }

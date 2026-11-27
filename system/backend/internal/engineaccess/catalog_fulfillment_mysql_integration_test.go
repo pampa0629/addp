@@ -20,7 +20,7 @@ import (
 func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 	repo := mysqlSourceGrantRepository(t)
 	ctx := t.Context()
-	actorFor := func(memberID int64) Actor {
+	actorFrom := func(repo *Repository, memberID int64) Actor {
 		t.Helper()
 		actor := Actor{TenantID: 7, MembershipID: memberID, TokenExpiresAt: time.Now().Add(time.Minute)}
 		err := repo.db.Raw(`SELECT p.id,p.authorization_version FROM system.tenant_memberships m
@@ -31,6 +31,47 @@ func TestCatalogFulfillmentServiceAgainstMySQL(t *testing.T) {
 		}
 		return actor
 	}
+	actorFor := func(memberID int64) Actor { return actorFrom(repo, memberID) }
+	t.Run("DevelopFileSourceGrantRevocation", func(t *testing.T) {
+		db := repo.db.Begin()
+		if db.Error != nil {
+			t.Fatal(db.Error)
+		}
+		t.Cleanup(func() {
+			if err := db.Rollback().Error; err != nil {
+				t.Error(err)
+			}
+		})
+		files := NewRepository(db)
+		target := engineplugin.FileItemPath(99, "develop/grant-check.gpkg")
+		current := developGeoPackageFacts(t, target)
+		service := NewService(files, func(e *models.Engine) bool { return e.EngineType == "nfs" }).
+			WithAuthorizationFactsReader(bindingFactsReaderFunc(func(_ context.Context, tenant uint, fp string) (*authorizationfacts.AuthorizationFacts, error) {
+				if tenant != 7 || fp != current.ItemFingerprint {
+					t.Fatal("unexpected Meta lookup")
+				}
+				return current, nil
+			})).
+			WithIndependentTargetVerifier(independentVerifierFunc(func(ctx context.Context, tenant int64, path engineplugin.EngineCatalogPath) (int64, error) {
+				if tenant != 7 || path.StringPath() != target.StringPath() {
+					t.Fatal("unexpected provider target")
+				}
+				engine, err := files.engine(ctx, tenant, int64(path.EngineID), false)
+				if err != nil {
+					return 0, err
+				}
+				return engine.Version, nil
+			}))
+		if _, err := service.Create(ctx, CreateInput{Actor: actorFrom(files, 50001), EngineID: 99, TenantMembershipID: 50003,
+			ExpiresAt: time.Now().Add(time.Hour), Reason: "Authorize test file grants"}); err != nil {
+			t.Fatal(err)
+		}
+		reader := actorFrom(files, 50002)
+		input := CreateIndependentGrantInput{Actor: actorFrom(files, 50003), EngineID: 99, RequestID: uuid.New(), CatalogPath: target,
+			ItemFingerprint: current.ItemFingerprint, ExpectedBoundaryHash: *current.BoundaryHash,
+			RecipientType: "user", RecipientID: reader.PrincipalID, Action: "read", ExpiryMode: shared.SharingExpiryUntilRevoked, Reason: "Approve complete GeoPackage"}
+		exerciseDevelopFileGrant(t, db, service, ctx, input, userProvenance{PrincipalID: reader.PrincipalID, MembershipID: reader.MembershipID, AuthorizationVersion: reader.AuthorizationVersion}, current)
+	})
 	base := testFulfillmentRequest()
 	svc := NewService(repo, func(e *models.Engine) bool { return e.EngineType == "postgresql" }).
 		WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{base.Path}})
