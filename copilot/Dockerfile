@@ -43,6 +43,6 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8087"]
 ARG BUILD_ARCH=amd64
 ARG BUILD_TYPE=release
 ARG GOOS=linux
-COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+COPY --chmod=0755 dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
 COPY copilot/module-declaration.json /app/module-declaration.json
 ENTRYPOINT ["/app/runtime-log", "launch", "--module", "copilot", "--role", "backend", "--"]

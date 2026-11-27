@@ -137,9 +137,10 @@ def image_build_definition(service: str, directory: str) -> tuple[str, str | Non
     raise RegistrationError(f"{service}: no static image build definition rule")
 
 
-def dockerfile_copies_binary(text: str, binary: str) -> bool:
+def dockerfile_copies_binary(text: str, binary: str, *, chmod: str | None = None) -> bool:
     expected = rf"dist/\$\{{BUILD_TYPE\}}-\$\{{GOOS\}}-\$\{{BUILD_ARCH\}}/{re.escape(binary)}"
-    return re.search(rf"(?m)^\s*COPY\s+{expected}(?:\s|$)", text) is not None
+    mode = rf"--chmod={re.escape(chmod)}\s+" if chmod else ""
+    return re.search(rf"(?m)^\s*COPY\s+{mode}{expected}(?:\s|$)", text) is not None
 
 
 def dockerignore_pattern_regex(pattern: str) -> re.Pattern[str]:
@@ -669,8 +670,8 @@ def validate_registration(repository: Path) -> list[str]:
                 "from dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}"
             )
         if "runtime-log" in expected_compiled and (binary is not None or name in {"agent-backend", "copilot-backend"}):
-            if not dockerfile_copies_binary(definition_path.read_text(), "runtime-log"):
-                errors.append(f"{name}: {definition} must COPY shared runtime-log utility")
+            if not dockerfile_copies_binary(definition_path.read_text(), "runtime-log", chmod="0755"):
+                errors.append(f"{name}: {definition} must COPY shared runtime-log utility with --chmod=0755")
         if context is not None:
             errors.extend(
                 dockerfile_context_errors(

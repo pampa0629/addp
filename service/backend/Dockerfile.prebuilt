@@ -18,6 +18,6 @@ EXPOSE 8086
 
 CMD ["./server"]
 
-COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+COPY --chmod=0755 dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
 COPY service/module-declaration.json /app/module-declaration.json
 ENTRYPOINT ["/app/runtime-log", "launch", "--module", "service", "--role", "backend", "--"]

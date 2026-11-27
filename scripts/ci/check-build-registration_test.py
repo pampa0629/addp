@@ -719,9 +719,14 @@ class BuildRegistrationTest(unittest.TestCase):
         self._write("common/cmd/runtime-log/main.go", "package main\n")
         self.assertIn("runtime-log: scripts/build/compile.sh registration is missing", MODULE.validate_registration(self.repository))
         self._write("scripts/build/compile.sh", 'SERVICES=(\n    "sample-backend:sample/backend"\n    "runtime-log:common"\n)\n')
-        self.assertIn("sample-backend: sample/backend/Dockerfile.prebuilt must COPY shared runtime-log utility", MODULE.validate_registration(self.repository))
+        error = "sample-backend: sample/backend/Dockerfile.prebuilt must COPY shared runtime-log utility with --chmod=0755"
+        self.assertIn(error, MODULE.validate_registration(self.repository))
         path = self.repository / "sample/backend/Dockerfile.prebuilt"
-        path.write_text(path.read_text() + "COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log ./runtime-log\n")
+        original = path.read_text()
+        binary = "dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log ./runtime-log\n"
+        path.write_text(original + "COPY " + binary)
+        self.assertIn(error, MODULE.validate_registration(self.repository))
+        path.write_text(original + "COPY --chmod=0755 " + binary)
         self.assertEqual([], MODULE.validate_registration(self.repository))
 
     def test_accepts_untracked_auxiliary_dockerfile_before_first_commit(self) -> None:

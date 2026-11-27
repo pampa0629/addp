@@ -20,7 +20,7 @@ EXPOSE 8185
 # 运行
 CMD ["./server"]
 
-COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+COPY --chmod=0755 dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
 COPY develop/module-declaration.json /app/module-declaration.json
 # The receiver keeps the node log owner. Drop privileges before exec of the backend.
 ENTRYPOINT ["/app/runtime-log", "launch", "--module", "develop", "--role", "backend", "--", "/usr/bin/setpriv", "--reuid=10001", "--regid=10001", "--clear-groups", "--no-new-privs", "--"]

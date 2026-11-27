@@ -13,5 +13,5 @@ RUN chmod +x ./worker
 
 CMD ["./worker"]
 
-COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
+COPY --chmod=0755 dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/runtime-log /app/runtime-log
 ENTRYPOINT ["/app/runtime-log", "launch", "--module", "quality", "--role", "worker", "--"]
