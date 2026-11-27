@@ -164,6 +164,24 @@ class HostedMySQLReleaseTest(unittest.TestCase):
                     second.write_text(json.dumps(restarted | {key: wrong_value}))
                     exec(compile(check, str(entry), "exec"), {})
 
+    def test_full_startup_archive_redacts_credentials_and_keeps_the_first_error(self):
+        entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
+        collector = entry.read_text().split("<<'PYSTARTUP'", 1)[1].split("\n", 1)[1].split("\nPYSTARTUP\n", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            env_file = root / ".env"
+            env_file.write_text("MEILISEARCH_MASTER_KEY=fixture-search-key\nENCRYPTION_KEY='fixture-encryption-key'\n")
+            log = root / "system" / "fixture" / "0001.jsonl"
+            log.parent.mkdir(parents=True)
+            first_error = dict(msg="Database initialization failed", error="rejected fixture-search-key and fixture-encryption-key",
+                               payload="unused payload")
+            log.write_text("\n".join(json.dumps(dict(module_name="system", role="backend", level=level, message=json.dumps(body)))
+                                     for level, body in [("info", {"msg": "routine"}), ("error", first_error),
+                                                         ("error", {"msg": "subsequent error"})]))
+            result = subprocess.check_output([sys.executable, "-c", collector, str(root), str(env_file)], text=True)
+        self.assertEqual(json.loads(result), {"system/backend": {"message": "Database initialization failed",
+                         "error": "rejected [REDACTED] and [REDACTED]"}})
+
     def test_manual_hosted_gate_shell_and_python_syntax(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
         subprocess.run(["bash", "-n", entry], check=True)
@@ -174,7 +192,7 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules, full-release]", events)
+        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules, full-release, full-system-diagnostic]", events)
         for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py", "mysql-develop-file-online.py",
                      "mysql-quality-worker-online.py"):
             probe = ROOT / "scripts/test" / name

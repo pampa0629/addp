@@ -21,7 +21,7 @@ case "$ADDP_MYSQL_ONLINE_SUITE" in
     ADDP_DEPLOYMENT_MODULES=agent,asset,catalog,copilot,develop,graph,inference,manager,model,monitor,ontology,orchestrator,portal,quality,security,service,standard,system,transfer,workbench
     export TZ=UTC POSTGRES_HOST=unavailable.invalid
     ;;
-  full-release)
+  full-release|full-system-diagnostic)
     export ADDP_DEPLOYMENT_SCOPE=full TZ=UTC POSTGRES_HOST=unavailable.invalid
     export ADDP_SUPERMAP_WORKFLOW_ENABLED=false INFRA_BIND_HOST=127.0.0.1
     ;;
@@ -29,7 +29,7 @@ case "$ADDP_MYSQL_ONLINE_SUITE" in
 esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 export ADDP_DEPLOYMENT_NETWORK="$ADDP_DEPLOYMENT_PROJECT" ADDP_INFRA_DATABASE_PROVIDER=mysql
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+if [[ "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
   export ADDP_DEPLOYMENT_PROJECT=addp-platform ADDP_DEPLOYMENT_NETWORK=addp-network
 fi
 export NGINX_BIND_HOST=127.0.0.1 NGINX_PORT=18080 ADDP_PUBLIC_ORIGIN=http://127.0.0.1:18080
@@ -49,7 +49,7 @@ work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
 export ADDP_MYSQL_FIXTURE_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-infra"
 export ADDP_MYSQL_FIXTURE_NETWORK="$ADDP_DEPLOYMENT_NETWORK"
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+if [[ "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
   export ADDP_MYSQL_FIXTURE_NETWORK="$ADDP_MYSQL_FIXTURE_PROJECT"
 fi
 if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
@@ -64,7 +64,7 @@ develop_file_fixture() {
 fixture_compose=(docker compose --env-file /dev/null -f "$work/compose.yml")
 fixture() { "${fixture_compose[@]}" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+if [[ "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
   app=(docker compose --env-file .env -f docker-compose.yml)
 fi
 if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
@@ -77,10 +77,76 @@ infra_started=false
 release_started=false
 full_network_id=
 stage=fixture
+full_startup_diagnostics() {
+  local system_id schema revisions
+  system_id=$("${app[@]}" ps -aq system-backend) || return 1
+  if [[ -n "$system_id" ]]; then
+    docker inspect --format '{{.State.Status}} exit={{.State.ExitCode}} restarts={{.RestartCount}} {{if .State.Health}}health={{.State.Health.Status}} checks={{range .State.Health.Log}}{{.ExitCode}} {{end}}{{end}}' \
+      "$system_id" > "$artifacts/system-startup-state.txt"
+  fi
+  for schema in system common; do
+    if revisions=$(runtime <<<"SELECT owner, version, pending_version FROM \`$schema\`.startup_schema_revision ORDER BY owner" 2>/dev/null); then
+      printf '[%s]\n%s\n' "$schema" "$revisions"
+    else
+      printf '[%s]\nrevision_read_unavailable\n' "$schema"
+    fi
+  done > "$artifacts/bootstrap-mysql-versions.txt"
+  # runtime-log captures the child streams in the Runner-owned bind mount.
+  # Its segments are private to the container UID and already redact secrets.
+  sudo -n python3 - "$PWD/logs/runtime" .env <<'PYSTARTUP' > "$artifacts/startup-errors.json"
+import json
+from pathlib import Path
+import re
+import shlex
+import sys
+
+root = Path(sys.argv[1]).resolve()
+secrets = []
+for line in Path(sys.argv[2]).read_text().splitlines():
+    key, sep, value = line.partition("=")
+    if sep and (key == "ENCRYPTION_KEY" or re.fullmatch(r"[A-Z][A-Z0-9_]*_(?:PASSWORD|SECRET|TOKEN|PEPPER|MASTER_KEY|ENCRYPTION_KEY)", key)):
+        words = shlex.split(value, comments=True)
+        if len(words) == 1 and len(words[0]) >= 12:
+            secrets.append(words[0])
+secrets.sort(key=len, reverse=True)
+
+def redact(text, limit):
+    for secret in secrets:
+        text = text.replace(secret, "[REDACTED]")
+    return text[:limit]
+
+errors = {}
+for path in sorted(root.glob("*/*/*.jsonl")):
+    if path.is_symlink() or path.resolve() != path:
+        continue
+    with path.open() as stream:
+        for line in stream:
+            try:
+                entry = json.loads(line)
+                if entry.get("level") != "error":
+                    continue
+                fields = json.loads(entry["message"])
+                message = fields.get("msg") or fields.get("message")
+                if not isinstance(message, str):
+                    continue
+                details = {"message": redact(message, 320)}
+                if isinstance(fields.get("error"), str):
+                    details["error"] = redact(fields["error"], 400)
+                key = f'{entry["module_name"]}/{entry["role"]}'
+                errors.setdefault(key, details)
+                break
+            except (ValueError, KeyError, AttributeError, TypeError):
+                continue
+print(json.dumps(errors, ensure_ascii=False))
+PYSTARTUP
+}
 cleanup() {
   local status=$? cleanup_status=passed project remaining kind
   trap - EXIT INT TERM
   set +e
+  if [[ "$status" != 0 && "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
+    case "$stage" in deploy|restart-start) full_startup_diagnostics || true ;; esac
+  fi
   if [[ "$release_started" == true && "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
     docker compose --env-file .env -f docker-compose.runtimes.yml down --volumes --remove-orphans || cleanup_status=failed
   fi
@@ -157,22 +223,40 @@ keys = (
     "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
     "ADDP_OBSERVABILITY_LOGS_ENABLED",
 )
-if os.environ["ADDP_MYSQL_ONLINE_SUITE"] in {"quality-worker", "all-modules", "full-release"}:
+full = os.environ["ADDP_DEPLOYMENT_SCOPE"] == "full"
+if full or os.environ["ADDP_MYSQL_ONLINE_SUITE"] in {"quality-worker", "all-modules"}:
     keys += ("TZ",)
-if os.environ["ADDP_MYSQL_ONLINE_SUITE"] in {"all-modules", "full-release"}:
+if full or os.environ["ADDP_MYSQL_ONLINE_SUITE"] == "all-modules":
     keys += ("POSTGRES_HOST",)
-if os.environ["ADDP_MYSQL_ONLINE_SUITE"] == "full-release":
+if full:
     keys += ("ADDP_SUPERMAP_WORKFLOW_ENABLED", "INFRA_BIND_HOST")
 env_file = Path(".env")
 lines = [line for line in env_file.read_text().splitlines() if line.partition("=")[0] not in keys]
 lines.extend(f"{key}={shlex.quote(os.environ[key])}" for key in keys)
 env_file.write_text("\n".join(lines) + "\n")
 PY
+if [[ "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
+  (
+    source .env
+    while IFS='=' read -r key _; do
+      [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || continue
+      case "$key" in
+        *_PASSWORD|*_SECRET|*_TOKEN|*_PEPPER|*_MASTER_KEY|*_ENCRYPTION_KEY|ENCRYPTION_KEY)
+          credential=${!key:-}
+          if [[ ${#credential} -ge 12 ]]; then printf '::add-mask::%s\n' "$credential"; fi
+          ;;
+      esac
+    done < .env
+    printf '::add-mask::%s\n' "$MYSQL_ROOT_PASSWORD" "$ADDP_DATABASE_DEPLOY_PASSWORD"
+  )
+fi
 source scripts/infra/platform-database.sh
 schemas=(system common)
 collect_database_schema() { schemas+=("$1"); }
 application_services=$("${app[@]}" config --services)
-addp_prepare_selected_databases collect_database_schema "$application_services"
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" != full-system-diagnostic ]]; then
+  addp_prepare_selected_databases collect_database_schema "$application_services"
+fi
 
 for key in REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD IAM_MFA_ENCRYPTION_KEY MEILISEARCH_MASTER_KEY \
   MANAGER_SEARCH_REDIS_PASSWORD INFRA_FALKORDB_PASSWORD; do
@@ -337,7 +421,7 @@ networks:
     name: ${ADDP_MYSQL_FIXTURE_NETWORK:?}
 YAML
 
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+if [[ "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
   for project in addp-platform addp-infra addp-runtimes; do
     existing=$(docker ps -aq --filter "label=com.docker.compose.project=$project")
     [[ -z "$existing" ]] || { echo "Hosted Runner already contains project $project" >&2; exit 1; }
@@ -354,7 +438,7 @@ if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
     --label com.docker.compose.project=addp-infra --label com.docker.compose.network=addp-network "$ADDP_DEPLOYMENT_NETWORK")
 fi
 infra_started=true
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+if [[ "$ADDP_DEPLOYMENT_SCOPE" == full ]]; then
   fixture up -d --wait --wait-timeout 180 mysql registry
   docker network connect --alias "$ADDP_MYSQL_HOST" "$full_network_id" "$(fixture ps -q mysql)"
 else
@@ -365,7 +449,7 @@ if [[ "$ADDP_MYSQL_ONLINE_SUITE" == all-modules ]]; then
 fi
 curl --fail --silent --show-error --retry 10 --retry-connrefused --max-time 5 \
   http://127.0.0.1:5001/v2/ >/dev/null
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" != full-release ]]; then
+if [[ "$ADDP_DEPLOYMENT_SCOPE" != full ]]; then
   ADDP_INFRA_RESOLVED=1 bash scripts/infra/init-minio.sh --compose-file "$work/compose.yml" </dev/null
 fi
 admin() {
@@ -394,9 +478,62 @@ done
 
 stage=deploy
 release_started=true
-# The image builder offers option 2 to use the Runner's existing Docker configuration.
-bash scripts/prod/deploy.sh "$GITHUB_SHA" <<<2
-unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-system-diagnostic ]]; then
+  # Reproduce the System bootstrap command with the root Compose environment.
+  # The full manifest is required by prod/start.sh and includes every Runtime.
+  export IMAGE_TAG="$GITHUB_SHA" REGISTRY=localhost:5001
+  make build BUILD_ARGS='--services system-backend'
+  make build-images IMAGE_BUILD_ARGS="--force --services system-backend,runtime-log --tag $IMAGE_TAG --registry $REGISTRY" <<<2
+  PROJECT_ROOT="$PWD"
+  source scripts/utils/observability-env.sh
+  addp_prepare_observability_env "$PWD/.env"
+  export IMAGE_TAG="$GITHUB_SHA"
+  system_image=$(docker image inspect --format '{{.Id}}' "$REGISTRY/addp-system-backend:$IMAGE_TAG")
+  pruner_image=$(docker image inspect --format '{{.Id}}' "$REGISTRY/addp-runtime-log:$IMAGE_TAG")
+  python3 -c '
+import runpy
+from pathlib import Path
+import sys
+write = runpy.run_path("scripts/prod/release-images.py")["write_override"]
+work = Path(sys.argv[1])
+write(work / "platform-images.yml", {"system-backend": sys.argv[2]})
+write(work / "infra-images.yml", {"runtime-log-pruner": sys.argv[3]}, external_mysql=True)
+' "$work" "$system_image" "$pruner_image"
+  app+=(-f "$work/platform-images.yml")
+  mkdir -m 700 -p "$PWD/logs/runtime"
+  diagnostic_infra=(docker compose -f docker-compose.infra.yml -f "$work/infra-images.yml")
+  "${diagnostic_infra[@]}" up -d --wait --wait-timeout 180 redis
+  "${diagnostic_infra[@]}" up -d --no-build --pull never runtime-log-pruner
+  export ADDP_DEPLOYMENT_DISCOVERY_DIR="$PWD/.dev-state/deployment-discovery"
+  python3 scripts/utils/deployment-inventory.py service-expectations --state running \
+    --compose-file docker-compose.yml --compose-file "$work/platform-images.yml"
+  if bash scripts/prod/prepare-module-databases.sh system -f docker-compose.yml -f "$work/platform-images.yml" \
+    -f "$ADDP_DEPLOYMENT_DISCOVERY_DIR/platform-service-expectations.json"; then
+    printf 'system_installer=0\ncommon_installer=0\n' > "$artifacts/bootstrap-installers.txt"
+  else
+    install_rc=$?
+    printf 'installers_failed=%s\n' "$install_rc" > "$artifacts/bootstrap-installers.txt"
+    exit "$install_rc"
+  fi
+  unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+  "${app[@]}" run --rm --no-deps -T --entrypoint bash system-backend -ec '
+    if ! exec 3<>"/dev/tcp/$REDIS_HOST/$REDIS_PORT"; then
+      printf "redis_tcp=unavailable\nredis_auth=not_run\n"; exit
+    fi
+    printf "redis_tcp=connected\n"
+    printf "*2\r\n\$4\r\nAUTH\r\n\$%s\r\n%s\r\n" "${#REDIS_PASSWORD}" "$REDIS_PASSWORD" >&3
+    if IFS= read -r -t 5 reply <&3 && [ "$reply" = $'"'"'+OK\r'"'"' ]; then
+      printf "redis_auth=accepted\n"
+    else
+      printf "redis_auth=rejected\n"
+    fi
+  ' | tee "$artifacts/bootstrap-redis.txt"
+  "${app[@]}" up -d --wait --wait-timeout 120 system-backend
+else
+  # The image builder offers option 2 to use the Runner's existing Docker configuration.
+  bash scripts/prod/deploy.sh "$GITHUB_SHA" <<<2
+  unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+fi
 inspect_runtime() {
 python3 - "$1" "$(fixture ps -q mysql)" <<'PY'
 import json
@@ -558,6 +695,19 @@ SQL
 }
 
 stage=runtime
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-system-diagnostic ]]; then
+  full_startup_diagnostics
+  "${app[@]}" exec -T system-backend sh -ec '
+    test "$ADDP_INFRA_DATABASE_PROVIDER:$ADDP_MYSQL_HOST:$ADDP_MYSQL_PORT" = mysql:mysql:3306
+    test "$ADDP_DATABASE_RUNTIME_USER" = platform_runtime
+    test -n "$ADDP_DATABASE_RUNTIME_PASSWORD"
+    if env | grep -q "^ADDP_DATABASE_DEPLOY_"; then exit 1; fi
+  '
+  verify_schema_versions "$artifacts/mysql-versions.txt"
+  printf 'system_ready=passed\n' > "$artifacts/system-bootstrap.txt"
+  stage=complete
+  exit 0
+fi
 if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
   bash scripts/prod/health-check.sh | tee "$artifacts/initial-health.txt"
 fi
