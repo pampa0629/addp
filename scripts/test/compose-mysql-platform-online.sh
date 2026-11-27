@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MySQL limited Compose release, on a disposable GitHub runner.
+# MySQL Compose release, on a disposable GitHub runner.
 set -euo pipefail
 umask 077
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
@@ -21,10 +21,17 @@ case "$ADDP_MYSQL_ONLINE_SUITE" in
     ADDP_DEPLOYMENT_MODULES=agent,asset,catalog,copilot,develop,graph,inference,manager,model,monitor,ontology,orchestrator,portal,quality,security,service,standard,system,transfer,workbench
     export TZ=UTC POSTGRES_HOST=unavailable.invalid
     ;;
+  full-release)
+    export ADDP_DEPLOYMENT_SCOPE=full TZ=UTC POSTGRES_HOST=unavailable.invalid
+    export ADDP_SUPERMAP_WORKFLOW_ENABLED=false INFRA_BIND_HOST=127.0.0.1
+    ;;
   *) echo "unknown Hosted MySQL suite" >&2; exit 2 ;;
 esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 export ADDP_DEPLOYMENT_NETWORK="$ADDP_DEPLOYMENT_PROJECT" ADDP_INFRA_DATABASE_PROVIDER=mysql
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  export ADDP_DEPLOYMENT_PROJECT=addp-platform ADDP_DEPLOYMENT_NETWORK=addp-network
+fi
 export NGINX_BIND_HOST=127.0.0.1 NGINX_PORT=18080 ADDP_PUBLIC_ORIGIN=http://127.0.0.1:18080
 export ALLOWED_ORIGINS="$ADDP_PUBLIC_ORIGIN" CONSOLE_URL="$ADDP_PUBLIC_ORIGIN" PUBLIC_API_URL="$ADDP_PUBLIC_ORIGIN"
 export ADDP_MYSQL_HOST=mysql ADDP_MYSQL_PORT=3306 ADDP_MYSQL_SSLMODE=disable
@@ -40,7 +47,11 @@ artifacts="${ADDP_ONLINE_ARTIFACT_DIR:?}"
 mkdir -p "$artifacts"
 work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
-export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
+export ADDP_MYSQL_FIXTURE_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-infra"
+export ADDP_MYSQL_FIXTURE_NETWORK="$ADDP_DEPLOYMENT_NETWORK"
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  export ADDP_MYSQL_FIXTURE_NETWORK="$ADDP_MYSQL_FIXTURE_PROJECT"
+fi
 if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
   export ADDP_ONLINE_TEST_RUN_ID="develop-file-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
   export GEOPYTHON_FIXTURE_TAG="hosted-${GITHUB_SHA}"
@@ -53,6 +64,9 @@ develop_file_fixture() {
 fixture_compose=(docker compose --env-file /dev/null -f "$work/compose.yml")
 fixture() { "${fixture_compose[@]}" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  app=(docker compose --env-file .env -f docker-compose.yml)
+fi
 if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
   IFS=, read -r -a extra_modules <<< "$ADDP_DEPLOYMENT_MODULES"
   for module in "${extra_modules[@]}"; do
@@ -61,11 +75,15 @@ if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
 fi
 infra_started=false
 release_started=false
+full_network_id=
 stage=fixture
 cleanup() {
   local status=$? cleanup_status=passed project remaining kind
   trap - EXIT INT TERM
   set +e
+  if [[ "$release_started" == true && "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+    docker compose --env-file .env -f docker-compose.runtimes.yml down --volumes --remove-orphans || cleanup_status=failed
+  fi
   if [ "$release_started" = true ]; then
     if [[ "$status" != 0 && "$stage" == deploy ]]; then
       # Report application error messages before removing the failed containers.
@@ -91,10 +109,18 @@ for message in sorted(messages):
   if [ "$infra_started" = true ]; then
     fixture down --volumes --remove-orphans || cleanup_status=failed
   fi
+  if [[ -n "$full_network_id" ]]; then
+    docker compose --env-file .env -f docker-compose.infra.yml down --volumes --remove-orphans || cleanup_status=failed
+    if docker network inspect "$full_network_id" >/dev/null 2>&1; then
+      docker network rm "$full_network_id" || cleanup_status=failed
+    fi
+  fi
   if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
     develop_file_fixture stop-nfs > "$artifacts/develop-nfs-cleanup.json" || cleanup_status=failed
   fi
-  for project in "$ADDP_DEPLOYMENT_PROJECT" "$ADDP_MYSQL_FIXTURE_PROJECT"; do
+  local projects=("$ADDP_DEPLOYMENT_PROJECT" "$ADDP_MYSQL_FIXTURE_PROJECT")
+  if [[ -n "$full_network_id" ]]; then projects+=(addp-infra addp-runtimes); fi
+  for project in "${projects[@]}"; do
     remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || cleanup_status=failed
     [[ -z "$remaining" ]] || cleanup_status=failed
     for kind in network volume; do
@@ -131,10 +157,12 @@ keys = (
     "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
     "ADDP_OBSERVABILITY_LOGS_ENABLED",
 )
-if os.environ["ADDP_MYSQL_ONLINE_SUITE"] in {"quality-worker", "all-modules"}:
+if os.environ["ADDP_MYSQL_ONLINE_SUITE"] in {"quality-worker", "all-modules", "full-release"}:
     keys += ("TZ",)
-if os.environ["ADDP_MYSQL_ONLINE_SUITE"] == "all-modules":
+if os.environ["ADDP_MYSQL_ONLINE_SUITE"] in {"all-modules", "full-release"}:
     keys += ("POSTGRES_HOST",)
+if os.environ["ADDP_MYSQL_ONLINE_SUITE"] == "full-release":
+    keys += ("ADDP_SUPERMAP_WORKFLOW_ENABLED", "INFRA_BIND_HOST")
 env_file = Path(".env")
 lines = [line for line in env_file.read_text().splitlines() if line.partition("=")[0] not in keys]
 lines.extend(f"{key}={shlex.quote(os.environ[key])}" for key in keys)
@@ -306,17 +334,40 @@ volumes:
   quality-source-data:
 networks:
   default:
-    name: ${ADDP_DEPLOYMENT_NETWORK:?}
+    name: ${ADDP_MYSQL_FIXTURE_NETWORK:?}
 YAML
 
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  for project in addp-platform addp-infra addp-runtimes; do
+    existing=$(docker ps -aq --filter "label=com.docker.compose.project=$project")
+    [[ -z "$existing" ]] || { echo "Hosted Runner already contains project $project" >&2; exit 1; }
+    for kind in network volume; do
+      existing=$(docker "$kind" ls -q --filter "label=com.docker.compose.project=$project")
+      [[ -z "$existing" ]] || { echo "Hosted Runner already contains $kind resources for $project" >&2; exit 1; }
+    done
+  done
+  if docker network inspect "$ADDP_DEPLOYMENT_NETWORK" >/dev/null 2>&1; then
+    echo "Hosted Runner already contains network $ADDP_DEPLOYMENT_NETWORK" >&2
+    exit 1
+  fi
+  full_network_id=$(docker network create --driver bridge \
+    --label com.docker.compose.project=addp-infra --label com.docker.compose.network=addp-network "$ADDP_DEPLOYMENT_NETWORK")
+fi
 infra_started=true
-fixture up -d --build --wait --wait-timeout 180
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  fixture up -d --wait --wait-timeout 180 mysql registry
+  docker network connect --alias "$ADDP_MYSQL_HOST" "$full_network_id" "$(fixture ps -q mysql)"
+else
+  fixture up -d --build --wait --wait-timeout 180
+fi
 if [[ "$ADDP_MYSQL_ONLINE_SUITE" == all-modules ]]; then
   fixture run --rm --no-deps -T redpanda-init
 fi
 curl --fail --silent --show-error --retry 10 --retry-connrefused --max-time 5 \
   http://127.0.0.1:5001/v2/ >/dev/null
-ADDP_INFRA_RESOLVED=1 bash scripts/infra/init-minio.sh --compose-file "$work/compose.yml" </dev/null
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" != full-release ]]; then
+  ADDP_INFRA_RESOLVED=1 bash scripts/infra/init-minio.sh --compose-file "$work/compose.yml" </dev/null
+fi
 admin() {
   fixture exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysql --protocol=tcp -h127.0.0.1 -uroot -NB'
 }
@@ -346,8 +397,8 @@ release_started=true
 # The image builder offers option 2 to use the Runner's existing Docker configuration.
 bash scripts/prod/deploy.sh "$GITHUB_SHA" <<<2
 unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
-stage=runtime
-python3 - "$artifacts" "$(fixture ps -q mysql)" <<'PY'
+inspect_runtime() {
+python3 - "$1" "$(fixture ps -q mysql)" <<'PY'
 import json
 import os
 from pathlib import Path
@@ -358,13 +409,19 @@ import time
 manifest = json.loads(Path("dist/compose-release/manifest.json").read_text())
 assert manifest["source_commit"] == os.environ["GITHUB_SHA"]
 assert manifest["selection"]["ADDP_INFRA_DATABASE_PROVIDER"] == "mysql"
-assert manifest["selection"]["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway"
-ids = subprocess.check_output(
-    ["docker", "ps", "-q", "--no-trunc", "--filter", f"label=com.docker.compose.project={os.environ['ADDP_DEPLOYMENT_PROJECT']}"],
-    text=True,
-).split()
-containers = json.loads(subprocess.check_output(["docker", "inspect", *ids], text=True))
-services = {item["Config"]["Labels"]["com.docker.compose.service"]: item for item in containers}
+assert manifest["selection"]["ADDP_DEPLOYMENT_SCOPE"] == os.environ["ADDP_DEPLOYMENT_SCOPE"]
+suite = os.environ["ADDP_MYSQL_ONLINE_SUITE"]
+full = suite == "full-release"
+
+def project_containers(project, stopped=False):
+    ids = subprocess.check_output(["docker", "ps", "-aq" if stopped else "-q", "--no-trunc", "--filter",
+                                  f"label=com.docker.compose.project={project}"], text=True).split()
+    containers = json.loads(subprocess.check_output(["docker", "inspect", *ids], text=True))
+    services = {item["Config"]["Labels"]["com.docker.compose.service"]: item for item in containers}
+    assert len(services) == len(ids), f"duplicate containers for {project}"
+    return services
+
+services = project_containers(os.environ["ADDP_DEPLOYMENT_PROJECT"])
 assert set(services) == set(manifest["projects"]["platform"])
 backends = ["system-backend", "meta-backend", "gateway"]
 requested = os.environ["ADDP_DEPLOYMENT_MODULES"]
@@ -372,6 +429,8 @@ requested_modules = requested.split(",") if requested else []
 manifest_modules = manifest["selection"].get("ADDP_DEPLOYMENT_MODULES")
 assert sorted(requested_modules) == (manifest_modules.split(",") if manifest_modules else []), "release modules differ from the Hosted selection"
 backends.extend(f"{module}-backend" for module in requested_modules if module not in {"portal", "system"})
+if full:
+    backends = [name for name in services if name == "gateway" or (name.endswith("-backend") and name != "portal-backend")]
 worker_runtimes = {
     "meta-worker": ("meta", "scan"),
     "quality-worker": ("quality", "quality-bounded"),
@@ -380,15 +439,15 @@ worker_runtimes = {
     "transfer-continuous-worker": ("transfer", "continuous_sync"),
 }
 workers = {service: identity for service, identity in worker_runtimes.items()
-           if identity[0] == "meta" or identity[0] in requested_modules}
-suite = os.environ.get("ADDP_MYSQL_ONLINE_SUITE")
-all_modules = suite == "all-modules"
+           if full or identity[0] == "meta" or identity[0] in requested_modules}
+all_modules = full or suite == "all-modules"
 for name in (*backends, *workers):
     container = services[name]
     settings = dict(value.split("=", 1) for value in container["Config"]["Env"])
     assert settings["ADDP_INFRA_DATABASE_PROVIDER"] == "mysql", name
     assert settings["ADDP_MYSQL_HOST"] == "mysql", name
-    assert (settings["REDIS_HOST"], settings["REDIS_PORT"]) == ("redis", "6379"), name
+    if not full:
+        assert (settings["REDIS_HOST"], settings["REDIS_PORT"]) == ("redis", "6379"), name
     assert settings["ADDP_DATABASE_RUNTIME_USER"] == "platform_runtime", name
     assert settings["ADDP_DATABASE_RUNTIME_PASSWORD"] == os.environ["ADDP_DATABASE_RUNTIME_PASSWORD"], name
     assert not any(key.startswith("ADDP_DATABASE_DEPLOY_") for key in settings), name
@@ -399,7 +458,8 @@ for name in (*backends, *workers):
     if all_modules or (suite == "quality-worker" and name in {"quality-backend", "quality-worker", "monitor-backend"}):
         assert settings["TZ"] == "UTC", name
     if all_modules:
-        assert settings["POSTGRES_HOST"] == "unavailable.invalid" and not settings.get("POSTGRES_PASSWORD"), name
+        assert settings["POSTGRES_HOST"] in ({"unavailable.invalid", "postgres"} if full else {"unavailable.invalid"}), name
+        assert not settings.get("POSTGRES_PASSWORD"), name
         assert settings["ADDP_MYSQL_PORT"] == "3306", name
 report = {"provider": "mysql", "verified_services": sorted(services)}
 if all_modules:
@@ -411,16 +471,38 @@ if all_modules:
     network = os.environ["ADDP_DEPLOYMENT_NETWORK"]
     fixture_project = os.environ["ADDP_MYSQL_FIXTURE_PROJECT"]
     attachments, = json.loads(subprocess.check_output(["docker", "network", "inspect", network], text=True))
-    assert attachments["Labels"]["com.docker.compose.project"] == fixture_project
-    assert set(ids) <= attachments["Containers"].keys(), "platform has a container outside the owned network"
-    fixture_ids = set(attachments["Containers"]) - set(ids)
-    fixtures = json.loads(subprocess.check_output(["docker", "inspect", *sorted(fixture_ids)], text=True))
-    fixture_services = {item["Config"]["Labels"]["com.docker.compose.service"]: item for item in fixtures}
-    assert len(fixtures) == len(fixture_services)
-    assert set(fixture_services) == {"mysql", "redis", "minio", "registry", "meilisearch", "manager-search-redis", "falkordb", "redpanda"}
+    assert attachments["Labels"]["com.docker.compose.project"] == ("addp-infra" if full else fixture_project)
+    fixture_services = project_containers(fixture_project)
+    expected_fixtures = {"mysql", "registry"}
+    if not full:
+        expected_fixtures.update({"redis", "minio", "meilisearch", "manager-search-redis", "falkordb", "redpanda"})
+    assert set(fixture_services) == expected_fixtures
     assert fixture_services["mysql"]["Id"] == sys.argv[2]
-    assert all(item["Config"]["Labels"]["com.docker.compose.project"] == fixture_project for item in fixtures)
-    assert all(set(item["NetworkSettings"]["Networks"]) == {network} for item in (*containers, *fixtures))
+    if full:
+        infra = project_containers("addp-infra", stopped=True)
+        runtimes = project_containers("addp-runtimes", stopped=True)
+        for role, group in (("infra", infra), ("runtimes", runtimes)):
+            assert set(group) == set(manifest["projects"][role]), f"{role} differs from the fixed release manifest"
+            for name, item in group.items():
+                assert item["Image"] == manifest["image_ids"][manifest["projects"][role][name]], name
+                if role == "infra" and name.endswith("-init"):
+                    assert not item["State"]["Running"] and item["State"]["ExitCode"] == 0, name
+                elif role == "infra" and name == "runtime-log-pruner":
+                    assert item["State"]["Running"], name
+                else:
+                    assert item["State"]["Running"] and item["State"]["Health"]["Status"] == "healthy", name
+                assert not any(value.startswith(("ADDP_DATABASE_DEPLOY_", "POSTGRES_PASSWORD=")) for value in item["Config"]["Env"]), name
+        assert "postgres" not in infra, "the full release created an internal PostgreSQL service"
+        attached = (*services.values(), fixture_services["mysql"],
+                    *(item for name, item in infra.items() if not name.endswith("-init") and name != "runtime-log-pruner"),
+                    *(item for name, item in runtimes.items() if name != "jupyter-launcher"))
+        report.update(infra_services=sorted(infra), ready_runtime_services=sorted(runtimes),
+                      platform_processes={name: item["Id"] for name, item in services.items()},
+                      runtime_processes={name: item["Id"] for name, item in runtimes.items()},
+                      mysql_container=fixture_services["mysql"]["Id"])
+    else:
+        attached = (*services.values(), *fixture_services.values())
+    assert set(attachments["Containers"]) == {item["Id"] for item in attached}, "platform network has unexpected members"
     worker_instances = {}
     deadline = time.monotonic() + 60
     while True:
@@ -443,31 +525,93 @@ WHERE i.role='worker' AND i.status='up' AND i.stopped_at IS NULL AND i.lease_exp
         time.sleep(2)
     report.update(fixture_services=sorted(fixture_services), ready_http_services=sorted((*backends, "portal-backend")),
                   database_runtime_services=sorted((*backends, *workers)), worker_instances=worker_instances)
-Path(sys.argv[1], "runtime.json").write_text(json.dumps(report))
+Path(sys.argv[1]).write_text(json.dumps(report) + "\n")
 PY
-printf 'server_version=%s\n' "$(admin <<<'SELECT VERSION()')" | tee "$artifacts/mysql-versions.txt"
-for schema in "${schemas[@]}"; do
-  versions=$(runtime <<<"SELECT owner, version, pending_version FROM \`$schema\`.startup_schema_revision ORDER BY owner")
-  [[ -n "$versions" ]]
-  awk -F '\t' 'NF != 3 || $2 < 1 || $3 != 0 { exit 1 }' <<<"$versions"
-  printf '[%s]\n%s\n' "$schema" "$versions" | tee -a "$artifacts/mysql-versions.txt"
-  if runtime <<<"CREATE TABLE \`$schema\`.hosted_ddl_probe (id INTEGER)" 2>"$work/ddl.err"; then
-    printf 'Runtime unexpectedly created a table in %s\n' "$schema" >&2
-    exit 1
-  fi
-  grep -q 'ERROR 1142 .*CREATE command denied' "$work/ddl.err"
-done
-printf 'restricted_runtime_ddl=denied\n' | tee -a "$artifacts/mysql-versions.txt"
+}
 
-if [[ "$ADDP_MYSQL_ONLINE_SUITE" == all-modules ]]; then
-  expected=$(printf '%s\n' "${schemas[@]}" | LC_ALL=C sort)
-  actual=$(admin <<'SQL' | LC_ALL=C sort
+verify_schema_versions() {
+  (
+    printf 'server_version=%s\n' "$(admin <<<'SELECT VERSION()')"
+    for schema in "${schemas[@]}"; do
+      versions=$(runtime <<<"SELECT owner, version, pending_version FROM \`$schema\`.startup_schema_revision ORDER BY owner")
+      [[ -n "$versions" ]]
+      awk -F '\t' 'NF != 3 || $2 < 1 || $3 != 0 { exit 1 }' <<<"$versions"
+      printf '[%s]\n%s\n' "$schema" "$versions"
+      if runtime <<<"CREATE TABLE \`$schema\`.hosted_ddl_probe (id INTEGER)" 2>"$work/ddl.err"; then
+        printf 'Runtime unexpectedly created a table in %s\n' "$schema" >&2
+        exit 1
+      fi
+      grep -q 'ERROR 1142 .*CREATE command denied' "$work/ddl.err"
+    done
+    printf 'restricted_runtime_ddl=denied\n'
+    if [[ "$ADDP_MYSQL_ONLINE_SUITE" == all-modules || "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+      expected=$(printf '%s\n' "${schemas[@]}" | LC_ALL=C sort)
+      actual=$(admin <<'SQL' | LC_ALL=C sort
 SELECT SCHEMA_NAME FROM information_schema.SCHEMATA
 WHERE SCHEMA_NAME NOT IN ('information_schema','mysql','performance_schema','sys');
 SQL
-  )
-  [[ "$actual" == "$expected" ]] || { echo 'MySQL schemas differ from the registered owners' >&2; exit 1; }
-  printf 'platform_schemas=%s\n' "${#schemas[@]}" | tee -a "$artifacts/mysql-versions.txt"
+      )
+      [[ "$actual" == "$expected" ]] || { echo 'MySQL schemas differ from the registered owners' >&2; exit 1; }
+      printf 'platform_schemas=%s\n' "${#schemas[@]}"
+    fi
+  ) | tee "$1"
+}
+
+stage=runtime
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  bash scripts/prod/health-check.sh | tee "$artifacts/initial-health.txt"
+fi
+inspect_runtime "$artifacts/runtime.json"
+verify_schema_versions "$artifacts/mysql-versions.txt"
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == all-modules ]]; then
+  stage=complete
+  exit 0
+fi
+if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
+  schema_digests() {
+    local schema digest
+    for schema in "${schemas[@]}"; do
+      digest=$(fixture exec -T mysql sh -ec '
+        export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"
+        exec mysqldump -uroot --no-data --routines --events --skip-comments --skip-dump-date \
+          --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF --databases "$1"
+      ' dump "$schema" | sed -E 's/ AUTO_INCREMENT=[0-9]+//g' | sha256sum)
+      printf '%s\t%s\n' "$schema" "${digest%% *}"
+    done
+  }
+  schema_digests > "$artifacts/mysql-schema-sha256.tsv"
+  stage=restart-stop
+  bash scripts/prod/stop.sh
+  for project in addp-platform addp-runtimes; do
+    [[ -z $(docker ps -aq --filter "label=com.docker.compose.project=$project") ]]
+  done
+  stage=restart-start
+  bash scripts/prod/start.sh
+  stage=restart-verification
+  bash scripts/prod/health-check.sh | tee "$artifacts/restarted-health.txt"
+  inspect_runtime "$artifacts/restarted-runtime.json"
+  verify_schema_versions "$artifacts/restarted-mysql-versions.txt"
+  schema_digests > "$artifacts/restarted-mysql-schema-sha256.tsv"
+  cmp "$artifacts/mysql-versions.txt" "$artifacts/restarted-mysql-versions.txt"
+  cmp "$artifacts/mysql-schema-sha256.tsv" "$artifacts/restarted-mysql-schema-sha256.tsv"
+  python3 - "$artifacts" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+artifacts = Path(sys.argv[1])
+installed = json.loads((artifacts / "runtime.json").read_text())
+restarted = json.loads((artifacts / "restarted-runtime.json").read_text())
+assert installed["mysql_container"] == restarted["mysql_container"], "restart changed the external MySQL instance"
+for group in ("platform_processes", "runtime_processes"):
+    assert installed[group].keys() == restarted[group].keys(), group
+    assert set(installed[group].values()).isdisjoint(restarted[group].values()), group
+for service, worker in installed["worker_instances"].items():
+    assert worker["instance_id"] != restarted["worker_instances"][service]["instance_id"], service
+(artifacts / "restart.json").write_text(json.dumps({"external_mysql_unchanged": True,
+    "platform_and_runtime_recreated": True, "worker_registrations_recreated": True,
+    "owner_versions_unchanged": True, "owner_schema_digests_unchanged": True}) + "\n")
+PY
   stage=complete
   exit 0
 fi

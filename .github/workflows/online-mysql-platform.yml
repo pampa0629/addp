@@ -7,14 +7,14 @@ on:
         description: Isolated release scenario
         type: choice
         default: gateway
-        options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules]
+        options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules, full-release]
 
 permissions:
   contents: read
 
 jobs:
   mysql-platform:
-    name: Online MySQL limited release (Linux x86_64)
+    name: Online MySQL Compose release (Linux x86_64)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -41,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nfs-kernel-server nfs-common
 
-      - name: Run Hosted MySQL limited release
+      - name: Run Hosted MySQL Compose release
         env:
           ADDP_MYSQL_ONLINE_SUITE: ${{ inputs.suite }}
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-mysql-platform-evidence
@@ -60,6 +60,6 @@ jobs:
         if: always()
         uses: ./.github/actions/ci-gate-summary
         with:
-          gate: Online MySQL limited release
+          gate: Online MySQL Compose release
           status: ${{ job.status }}
           details-file: ${{ runner.temp }}/addp-mysql-platform-evidence/summary.txt

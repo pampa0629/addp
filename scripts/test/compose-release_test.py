@@ -31,7 +31,7 @@ class HostedMySQLReleaseTest(unittest.TestCase):
     def test_fixture_file_carries_the_project_used_by_minio_initialization(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
         fixture = entry.read_text().split("<<'YAML'\n", 1)[1].split("\nYAML\n", 1)[0]
-        env = dict(os.environ, ADDP_MYSQL_FIXTURE_PROJECT="hosted-infra-test", ADDP_DEPLOYMENT_NETWORK="hosted-net",
+        env = dict(os.environ, ADDP_MYSQL_FIXTURE_PROJECT="hosted-infra-test", ADDP_MYSQL_FIXTURE_NETWORK="hosted-net",
                    MYSQL_FIXTURE_IMAGE="mysql:8.0", MYSQL_ROOT_PASSWORD="fixture", REDIS_PASSWORD="fixture",
                    MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture", INFRA_FALKORDB_PASSWORD="fixture",
                    GITHUB_WORKSPACE=str(ROOT))
@@ -117,7 +117,7 @@ class HostedMySQLReleaseTest(unittest.TestCase):
 
     def test_hosted_runtime_accepts_the_normalized_multi_module_manifest(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
-        check = entry.read_text().split("stage=runtime\n", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        check = entry.read_text().split("inspect_runtime() {\n", 1)[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
         env = dict(ADDP_DEPLOYMENT_SCOPE="system-meta-gateway", ADDP_DEPLOYMENT_MODULES="quality,monitor",
                    ADDP_MYSQL_ONLINE_SUITE="quality-worker", ADDP_INFRA_DATABASE_PROVIDER="mysql",
                    ADDP_DEPLOYMENT_PROJECT="test-scoped", ADDP_DATABASE_RUNTIME_PASSWORD="fixture", GITHUB_SHA="fixture")
@@ -127,30 +127,54 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         names = ("system-backend", "meta-backend", "meta-worker", "gateway", "quality-backend", "quality-worker", "monitor-backend")
         containers = [dict(Config=dict(Labels={"com.docker.compose.service": name}, Env=settings),
                            Image=IMAGE_ID, State=dict(Running=True)) for name in names]
+        inspect_results = ["\n".join(names), json.dumps(containers)]
         manifest = dict(source_commit=env["GITHUB_SHA"], selection=release.selection(env),
                         projects={"platform": dict.fromkeys(names, REFERENCE)}, image_ids={REFERENCE: IMAGE_ID})
-        with tempfile.TemporaryDirectory() as work, patch.dict(os.environ, env), patch.object(sys, "argv", [str(entry), work]):
+        with tempfile.TemporaryDirectory() as work, patch.dict(os.environ, env), \
+                patch.object(sys, "argv", [str(entry), str(Path(work, "runtime.json"))]):
             with patch.object(Path, "read_text", return_value=json.dumps(manifest)), \
-                    patch.object(subprocess, "check_output", side_effect=["owned", json.dumps(containers)]):
+                    patch.object(subprocess, "check_output", side_effect=inspect_results):
                 exec(compile(check, str(entry), "exec"), {})
             self.assertEqual(json.loads(Path(work, "runtime.json").read_text())["verified_services"], sorted(names))
             manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] = "monitor,standard"
             with patch.object(Path, "read_text", return_value=json.dumps(manifest)), \
-                    patch.object(subprocess, "check_output", side_effect=["owned", json.dumps(containers)]), \
+                    patch.object(subprocess, "check_output", side_effect=inspect_results), \
                     self.assertRaisesRegex(AssertionError, "release modules differ"):
                 exec(compile(check, str(entry), "exec"), {})
+
+    def test_full_hosted_restart_requires_same_mysql_and_new_runtime_instances(self):
+        entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
+        branch = entry.read_text().split("stage=restart-stop\n", 1)[1]
+        self.assertRegex(branch, r"(?m)^  bash scripts/prod/start\.sh$")
+        self.assertLess(branch.index('cmp "$artifacts/mysql-schema-sha256.tsv"'), branch.index("restart.json"))
+        check = branch.split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        initial = dict(mysql_container="owned-mysql", platform_processes={"system-backend": "system-1"},
+                       runtime_processes={"duckdb-engine": "duckdb-1"}, worker_instances={"meta-worker": {"instance_id": "worker-1"}})
+        restarted = dict(mysql_container="owned-mysql", platform_processes={"system-backend": "system-2"},
+                         runtime_processes={"duckdb-engine": "duckdb-2"}, worker_instances={"meta-worker": {"instance_id": "worker-2"}})
+        with tempfile.TemporaryDirectory() as work, patch.object(sys, "argv", [str(entry), work]):
+            Path(work, "runtime.json").write_text(json.dumps(initial))
+            second = Path(work, "restarted-runtime.json")
+            second.write_text(json.dumps(restarted))
+            exec(compile(check, str(entry), "exec"), {})
+            self.assertTrue(json.loads(Path(work, "restart.json").read_text())["owner_schema_digests_unchanged"])
+            for key in initial:
+                with self.subTest(key=key), self.assertRaises(AssertionError):
+                    wrong_value = "foreign-mysql" if key == "mysql_container" else initial[key]
+                    second.write_text(json.dumps(restarted | {key: wrong_value}))
+                    exec(compile(check, str(entry), "exec"), {})
 
     def test_manual_hosted_gate_shell_and_python_syntax(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
         subprocess.run(["bash", "-n", entry], check=True)
         parts = entry.read_text().split("<<'PY'\n")
-        self.assertEqual(len(parts), 4)
+        self.assertEqual(len(parts), 5)
         for part in parts[1:]:
             compile(part.split("\nPY\n", 1)[0], str(entry), "exec")
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules]", events)
+        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules, full-release]", events)
         for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py", "mysql-develop-file-online.py",
                      "mysql-quality-worker-online.py"):
             probe = ROOT / "scripts/test" / name
@@ -448,6 +472,22 @@ class RuntimeSelectionTest(unittest.TestCase):
         env = release.release_environment(dict(os.environ, ADDP_SUPERMAP_WORKFLOW_ENABLED=enabled),
                                           "fixture", "registry.invalid", platform)
         return release.compose_model("runtimes", env), env
+
+    def test_full_mysql_preserves_formal_infra_application_and_runtime_selection(self):
+        inherited = dict(os.environ, ADDP_DEPLOYMENT_SCOPE="full", ADDP_DEPLOYMENT_MODULES="",
+                         ADDP_SUPERMAP_WORKFLOW_ENABLED="false", ADDP_OBSERVABILITY_LOGS_ENABLED="false",
+                         REDIS_PASSWORD="fixture", INFRA_FALKORDB_PASSWORD="fixture", ADDP_MYSQL_HOST="mysql", ADDP_MYSQL_PORT="3306")
+        models = {}
+        for provider in ("postgres", "mysql"):
+            env = release.release_environment(dict(inherited, ADDP_INFRA_DATABASE_PROVIDER=provider),
+                                              "fixture", "registry.invalid", "linux/amd64")
+            models[provider] = {project: release.compose_model(project, env) for project in release.COMPOSE_FILES}
+        postgres, mysql = (models[provider] for provider in ("postgres", "mysql"))
+        self.assertEqual(set(mysql["infra"]), set(postgres["infra"]) - {"postgres"})
+        self.assertEqual(set(mysql["platform"]), set(postgres["platform"]))
+        self.assertEqual(set(mysql["runtimes"]), set(postgres["runtimes"]))
+        self.assertIn("spark-workflow-engine", mysql["runtimes"])
+        self.assertIn("jupyter-launcher", mysql["runtimes"])
 
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
