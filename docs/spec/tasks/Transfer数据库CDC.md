@@ -261,6 +261,8 @@ Provider 子表字段、主键与级联关系见[Capture 资源登记](../../../
 
 #### 捕获资源准备顺序
 
+首次 Start 通过租户引擎描述检查目标可用状态和能力，并用源连接实时核对源表。源端复核通过后，才取得与目标描述同版本的连接，检查目标表是否同名。同名、目标版本变化或目录检查失败时均在登记捕获代次前停止。
+
 capture supervisor 先在同一事务登记 generation 与对应 provider 子事实，再显式创建数据 topic；MySQL/Oracle 还要创建并授权 schema-history topic，随后创建或更新 connector 并等待 connector/task 进入 `RUNNING`。
 
 #### 暂停与保留窗口

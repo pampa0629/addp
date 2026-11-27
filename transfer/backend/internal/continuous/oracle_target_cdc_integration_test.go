@@ -100,7 +100,7 @@ func runIntegrationDatabaseCDCToOracleTargetLifecycle(t *testing.T, sourceType s
 	if err != nil {
 		t.Fatal(err)
 	}
-	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver, enginetest.Descriptors(resolver))
 	captureSupervisor, err := capture.NewSupervisor(
 		captureRepo, capturePlanResolver, connectClient, topicAdmin,
 		capture.DatabaseSourceResources{}, capture.SupervisorConfig{

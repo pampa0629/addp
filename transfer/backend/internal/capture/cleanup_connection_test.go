@@ -19,7 +19,16 @@ import (
 
 type captureConnectionToken struct{}
 
-func (captureConnectionToken) Token(context.Context, uint) (string, error) { return "fixture", nil }
+func (captureConnectionToken) Token(_ context.Context, tenant uint) (string, error) {
+	if tenant != 7 {
+		return "", errors.New("unexpected fixture tenant")
+	}
+	return "fixture", nil
+}
+
+func (captureConnectionToken) PlatformToken(context.Context) (string, error) {
+	return "", errors.New("unexpected platform token request")
+}
 
 func cleanupConnectionTask() *models.TransferTask {
 	return &models.TransferTask{ID: 3, TenantID: 7, TaskType: "sync", Config: commonmodels.JSONMap{
@@ -45,7 +54,7 @@ func TestCleanupPlanUsesExactPurposeWithoutOrdinaryFallback(t *testing.T) {
 		w.WriteHeader(409) // Real System connection semantics for deleting.
 	}))
 	defer server.Close()
-	resolver := NewDatabasePlanResolver(planner.NewSystemEngineResolver(client.NewSystemClient(server.URL, captureConnectionToken{})))
+	resolver := NewDatabasePlanResolver(planner.NewSystemEngineResolver(client.NewSystemClient(server.URL, captureConnectionToken{})), nil)
 	task := cleanupConnectionTask()
 	if _, err := resolver.ResolveForCleanup(t.Context(), task); err == nil || ordinary != 1 {
 		t.Fatal("ordinary deleting source should remain blocked")
@@ -121,7 +130,7 @@ func TestCleanupCaptureValidatesFrozenSourceBeforeEffects(t *testing.T) {
 				return grant, nil
 			})
 			// The ordinary resolver is intentionally unusable for this purpose.
-			resolver := NewDatabasePlanResolver(planner.StaticEngineResolver{})
+			resolver := NewDatabasePlanResolver(planner.StaticEngineResolver{}, nil)
 			task := cleanupConnectionTask()
 			plan, err := resolver.ResolveForCleanup(ctx, task)
 			if mode == "plan_denied" {

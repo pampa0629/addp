@@ -127,7 +127,7 @@ func testCleanupConnectionPipelineAgainstPostgres(t *testing.T, db *gorm.DB) {
 			}))
 			defer server.Close()
 			svc := NewTransferCleanupService(tx, client.NewSystemServiceClient(server.URL, cleanupRuntimeToken{}, server.Client()), transferCleanupTestConfig())
-			control := &connectionPipelineCapture{fakeCaptureControl: &fakeCaptureControl{}, db: tx, resolver: capture.NewDatabasePlanResolver(planner.StaticEngineResolver{}), unknown: mode == "native_unknown"}
+			control := &connectionPipelineCapture{fakeCaptureControl: &fakeCaptureControl{}, db: tx, resolver: capture.NewDatabasePlanResolver(planner.StaticEngineResolver{}, nil), unknown: mode == "native_unknown"}
 			svc.SetCaptureControl(control)
 			runCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()

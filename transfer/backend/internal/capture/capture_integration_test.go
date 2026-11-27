@@ -14,6 +14,7 @@ import (
 	engineplugin "github.com/addp/common/engine/plugin"
 	"github.com/addp/common/engine/plugins/postgresql"
 	commonExecution "github.com/addp/common/execution"
+	"github.com/addp/transfer/internal/enginetest"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/planner"
 	"github.com/addp/transfer/internal/repository"
@@ -113,7 +114,7 @@ func TestIntegrationPostgreSQLCaptureControlLifecycle(t *testing.T) {
 		20: {Type: "postgresql", EngineID: 20, ConnInfo: businessInfo},
 	}
 	supervisor, err := NewSupervisor(
-		repository.NewCaptureRepository(infraDB), NewDatabasePlanResolver(resolver), connectClient, topicAdmin,
+		repository.NewCaptureRepository(infraDB), NewDatabasePlanResolver(resolver, enginetest.Descriptors(resolver)), connectClient, topicAdmin,
 		DatabaseSourceResources{}, SupervisorConfig{
 			TopicRetention: time.Hour, TopicReplication: integrationEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 			ConnectLoopbackHost: integrationEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),

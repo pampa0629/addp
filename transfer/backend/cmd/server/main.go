@@ -228,7 +228,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("初始化 Kafka Connect client 失败: %v", err)
 		}
-		capturePlanResolver := capture.NewDatabasePlanResolver(planner.NewSystemEngineResolver(systemClient))
+		capturePlanResolver := capture.NewDatabasePlanResolver(planner.NewSystemEngineResolver(systemClient), engineDescriptor)
 		captureSupervisor, err := capture.NewSupervisor(
 			transferRepo.NewCaptureRepository(db),
 			capturePlanResolver,

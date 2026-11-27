@@ -166,7 +166,7 @@ func TestIntegrationOracleSpatialCDCSchemaDriftBlocksAndStops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver, enginetest.Descriptors(resolver))
 	captureSupervisor, err := capture.NewSupervisor(captureRepo, capturePlanResolver, connectClient, topicAdmin, capture.DatabaseSourceResources{}, capture.SupervisorConfig{
 		TopicRetention: time.Hour, TopicReplication: cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 		ConnectLoopbackHost:     cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
@@ -378,7 +378,7 @@ func runIntegrationOracleCDCNativeTypeMatrix(t *testing.T, targetType string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver, enginetest.Descriptors(resolver))
 	captureSupervisor, err := capture.NewSupervisor(captureRepo, capturePlanResolver, connectClient, topicAdmin, capture.DatabaseSourceResources{}, capture.SupervisorConfig{
 		TopicRetention: time.Hour, TopicReplication: cdcDataEnvInt16("ADDP_TEST_INFRA_KAFKA_REPLICATION_FACTOR", 1),
 		ConnectLoopbackHost:          cdcDataEnv("ADDP_TEST_KAFKA_CONNECT_LOOPBACK_HOST", "host.docker.internal"),
@@ -584,7 +584,7 @@ func runIntegrationOracleSpatialCDCGeometryCase(t *testing.T, geometryCase oracl
 	if err != nil {
 		t.Fatal(err)
 	}
-	capturePlanResolver := capture.NewDatabasePlanResolver(resolver)
+	capturePlanResolver := capture.NewDatabasePlanResolver(resolver, enginetest.Descriptors(resolver))
 	captureSupervisor, err := capture.NewSupervisor(
 		captureRepo, capturePlanResolver, connectClient, topicAdmin, capture.DatabaseSourceResources{},
 		capture.SupervisorConfig{

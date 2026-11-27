@@ -30,16 +30,11 @@ type CapturePlan struct {
 	SourceType                  models.CaptureSourceType
 	SourceConnInfo              engineplugin.ConnectionInfo
 	CDCConnInfo                 engineplugin.ConnectionInfo
-	TargetConnInfo              engineplugin.ConnectionInfo
 	SourceEngineID              uint
-	TargetEngineID              uint
-	TargetType                  string
 	SourceDatabase              string
 	SourceCDBName               string
 	SourceSchema                string
 	SourceTable                 string
-	TargetNamespace             string
-	TargetTable                 string
 	SourceIdentity              string
 	SourceConnectionFingerprint string
 	SourceKeys                  []string
@@ -47,7 +42,6 @@ type CapturePlan struct {
 	SourceFieldTypes            map[string]datatype.FieldType
 	SourceFieldNullables        map[string]bool
 	SourceSpatialInfo           *datatype.SpatialInfo
-	TargetKeys                  []string
 }
 
 type PlanResolver interface {
@@ -57,15 +51,29 @@ type PlanResolver interface {
 }
 
 type DatabasePlanResolver struct {
-	engines planner.EngineResolver
+	engines    planner.EngineResolver
+	descriptor func(context.Context, uint, uint) (*commonmodels.EngineRuntimeDescriptor, error)
 }
 
-func NewDatabasePlanResolver(engines planner.EngineResolver) *DatabasePlanResolver {
-	return &DatabasePlanResolver{engines: engines}
+func NewDatabasePlanResolver(engines planner.EngineResolver, descriptor func(context.Context, uint, uint) (*commonmodels.EngineRuntimeDescriptor, error)) *DatabasePlanResolver {
+	return &DatabasePlanResolver{engines: engines, descriptor: descriptor}
 }
 
 func (r *DatabasePlanResolver) Resolve(ctx context.Context, task *models.TransferTask) (*CapturePlan, error) {
-	plan, err := r.resolveBindings(task)
+	if task == nil || r == nil || r.engines == nil {
+		return nil, fmt.Errorf("database CDC capture requires task and engine resolver")
+	}
+	spec, err := planner.ParseDatabaseCDCTaskSpec(task.Config)
+	if err != nil {
+		return nil, err
+	}
+	resolver := planner.BindEngineResolver(r.engines, task.TenantID)
+	targetDescriptor := planner.DescriptorEngineResolver{Context: ctx, TenantID: task.TenantID, Lookup: r.descriptor}
+	bindings, err := planner.ResolveDatabaseCDCEndpoints(spec, resolver, targetDescriptor)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := databaseCapturePlan(spec, bindings)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +108,7 @@ func (r *DatabasePlanResolver) Resolve(ctx context.Context, task *models.Transfe
 	default:
 		return nil, fmt.Errorf("unsupported database CDC source type %q", plan.SourceType)
 	}
-	if err := validateTargetDoesNotExist(ctx, plan); err != nil {
+	if err := validateTargetDoesNotExist(ctx, spec.Target, bindings.Target, resolver); err != nil {
 		return nil, err
 	}
 	return plan, nil
@@ -217,38 +225,19 @@ func captureConnectionFingerprint(plan *CapturePlan) string {
 	}
 }
 
-func (r *DatabasePlanResolver) resolveBindings(task *models.TransferTask) (*CapturePlan, error) {
-	if task == nil || r == nil || r.engines == nil {
-		return nil, fmt.Errorf("database CDC capture requires task and engine resolver")
-	}
-	spec, err := planner.ParseDatabaseCDCTaskSpec(task.Config)
-	if err != nil {
-		return nil, err
-	}
-	resolver := planner.BindEngineResolver(r.engines, task.TenantID)
-	bindings, err := planner.ResolveDatabaseCDCBindings(spec, resolver)
-	if err != nil {
-		return nil, err
-	}
-	return databaseCapturePlan(spec, bindings)
-}
-
 func databaseCapturePlan(spec planner.DatabaseCDCTaskSpec, bindings planner.DatabaseCDCBindings) (*CapturePlan, error) {
 	sourceLocator, _ := spec.Source.ResourceLocator()
-	targetParent, _ := spec.Target.ParentResourceLocator()
-	sourceKeys, targetKeys, err := planner.DatabaseCDCSourceToTargetKeys(spec)
+	sourceKeys, _, err := planner.DatabaseCDCSourceToTargetKeys(spec)
 	if err != nil {
 		return nil, err
 	}
 	plan := &CapturePlan{
-		SourceConnInfo: bindings.Source.ConnInfo, TargetConnInfo: bindings.Target.ConnInfo,
-		SourceEngineID: bindings.Source.EngineID, TargetEngineID: bindings.Target.EngineID,
-		TargetType:      bindings.TargetType,
-		SourceTable:     sourceLocator.Path[1],
-		TargetNamespace: targetParent.Path[0], TargetTable: strings.TrimSpace(spec.Target.Name),
+		SourceConnInfo: bindings.Source.ConnInfo,
+		SourceEngineID: bindings.Source.EngineID,
+		SourceTable:    sourceLocator.Path[1],
 		SourceIdentity: strings.TrimSpace(spec.Source.Locator),
 		SourceKeys:     sourceKeys, SourceFieldTypes: make(map[string]datatype.FieldType, len(spec.Transforms[0].Fields)),
-		SourceFieldNullables: make(map[string]bool, len(spec.Transforms[0].Fields)), TargetKeys: targetKeys,
+		SourceFieldNullables: make(map[string]bool, len(spec.Transforms[0].Fields)),
 	}
 	switch bindings.SourceType {
 	case "postgresql":
@@ -631,30 +620,40 @@ func validateMySQLSourcePrimaryKey(ctx context.Context, plan *CapturePlan) error
 	return nil
 }
 
-func validateTargetDoesNotExist(ctx context.Context, plan *CapturePlan) error {
-	targetPlugin, err := engineplugin.Get(plan.TargetType)
+func validateTargetDoesNotExist(ctx context.Context, target planner.EndpointSpec, descriptor planner.EngineBinding, resolver planner.EngineResolver) error {
+	targetPlugin, err := engineplugin.Get(descriptor.Type)
 	if err != nil {
-		return fmt.Errorf("load database CDC target plugin %q: %w", plan.TargetType, err)
+		return fmt.Errorf("load database CDC target plugin %q: %w", descriptor.Type, err)
 	}
 	catalog, ok := targetPlugin.(engineplugin.EngineCatalogProvider)
 	if !ok {
-		return fmt.Errorf("database CDC target plugin %q does not implement EngineCatalogProvider", plan.TargetType)
+		return fmt.Errorf("database CDC target plugin %q does not implement EngineCatalogProvider", descriptor.Type)
 	}
 	modelProvider, ok := targetPlugin.(engineplugin.EngineCatalogModelProvider)
 	if !ok {
-		return fmt.Errorf("database CDC target plugin %q does not implement EngineCatalogModelProvider", plan.TargetType)
+		return fmt.Errorf("database CDC target plugin %q does not implement EngineCatalogModelProvider", descriptor.Type)
 	}
 	branch, ok := engineplugin.EngineCatalogFirstBusinessBranch(modelProvider.EngineCatalogModel())
 	if !ok {
-		return fmt.Errorf("database CDC target plugin %q has no namespace catalog level", plan.TargetType)
+		return fmt.Errorf("database CDC target plugin %q has no namespace catalog level", descriptor.Type)
 	}
-	parent := engineplugin.TabularNamespacePath(plan.TargetEngineID, branch.Term, plan.TargetNamespace)
-	children, err := catalog.ListChildren(ctx, plan.TargetConnInfo, parent, engineplugin.ListOptions{})
+	locator, _ := target.ParentResourceLocator()
+	namespace, table := locator.Path[0], strings.TrimSpace(target.Name)
+	parent := engineplugin.TabularNamespacePath(descriptor.EngineID, branch.Term, namespace)
+	connection, err := resolver.ResolveEngine(planner.EngineRef{ID: descriptor.EngineID, Type: descriptor.Type})
 	if err != nil {
-		return fmt.Errorf("list database CDC target namespace %q: %w", plan.TargetNamespace, err)
+		return fmt.Errorf("resolve database CDC target connection: %w", err)
+	}
+	if connection.EngineID != descriptor.EngineID || connection.EngineVersion != descriptor.EngineVersion {
+		return fmt.Errorf("database CDC target engine changed before catalog check")
+	}
+	catalogCtx := engineplugin.WithPoolEngineVersion(ctx, connection.EngineID, connection.EngineVersion)
+	children, err := catalog.ListChildren(catalogCtx, connection.ConnInfo, parent, engineplugin.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("list database CDC target namespace %q: %w", namespace, err)
 	}
 	for _, child := range children {
-		if child.Role == engineplugin.EngineCatalogRoleLeaf && child.Name == plan.TargetTable {
+		if child.Role == engineplugin.EngineCatalogRoleLeaf && child.Name == table {
 			return fmt.Errorf("database CDC initial snapshot target table must not already exist")
 		}
 	}
