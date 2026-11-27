@@ -15,6 +15,7 @@ import (
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/iam"
+	"github.com/addp/system/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -70,6 +71,24 @@ func TestCleanupAcceptanceAgainstMySQL(t *testing.T) {
 				retry.RequestID = uuid.NewString()
 			}
 			retry.ParentExecutionID = uuid.NewString()
+			parentIDs := []string{input.ParentExecutionID, retry.ParentExecutionID}
+			// The concurrency check commits the winner for the other connection.
+			// Remove those rows before the same gate starts the real coordinator.
+			t.Cleanup(func() {
+				cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				err := db.WithContext(cleanupContext).Transaction(func(tx *gorm.DB) error {
+					if err := tx.Where("tenant_id = ? AND request_id IN ?", input.TenantID, []string{input.RequestID, retry.RequestID}).
+						Delete(&models.CleanupRequestRecord{}).Error; err != nil {
+						return err
+					}
+					return tx.Where("tenant_id = ? AND (execution_id IN ? OR parent_execution_id IN ?)", input.TenantID, parentIDs, parentIDs).
+						Delete(&execution.TaskExecution{}).Error
+				})
+				if err != nil {
+					t.Errorf("clean up committed acceptance fixture: %v", err)
+				}
+			})
 			if err := retry.Seal(); err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +149,7 @@ func TestCleanupAcceptanceAgainstMySQL(t *testing.T) {
 				t.Fatalf("different actor: %v", err)
 			}
 			var total int64
-			if err := db.Model(&execution.TaskExecution{}).Where("execution_id IN ? OR parent_execution_id IN ?", []string{input.ParentExecutionID, retry.ParentExecutionID}, []string{input.ParentExecutionID, retry.ParentExecutionID}).Count(&total).Error; err != nil {
+			if err := db.Model(&execution.TaskExecution{}).Where("execution_id IN ? OR parent_execution_id IN ?", parentIDs, parentIDs).Count(&total).Error; err != nil {
 				t.Fatal(err)
 			}
 			if total != 2 || issued.Load() != 1 || audited.Load() != 1 {
