@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -56,28 +57,28 @@ type oauthClientRow struct {
 func (oauthClientRow) TableName() string { return "system.oauth_clients" }
 
 type authorizationRequestRow struct {
-	ID                         uuid.UUID      `gorm:"column:id"`
-	RequestSecretHash          string         `gorm:"column:request_secret_hash"`
-	ClientID                   string         `gorm:"column:client_id"`
-	RedirectURI                string         `gorm:"column:redirect_uri"`
-	ResponseTypes              pq.StringArray `gorm:"column:response_types;type:text[]"`
-	ResponseMode               string         `gorm:"column:response_mode"`
-	RequestedScopes            pq.StringArray `gorm:"column:requested_scopes;type:text[]"`
-	RequestedAudiences         pq.StringArray `gorm:"column:requested_audiences;type:text[]"`
-	Status                     string         `gorm:"column:status"`
-	PrincipalID                *int64         `gorm:"column:principal_id"`
-	ContextType                *string        `gorm:"column:context_type"`
-	TenantMembershipID         *int64         `gorm:"column:tenant_membership_id"`
-	IssuedAuthorizationVersion *int64         `gorm:"column:issued_authorization_version"`
-	GrantedScopes              pq.StringArray `gorm:"column:granted_scopes;type:text[]"`
-	GrantedAudiences           pq.StringArray `gorm:"column:granted_audiences;type:text[]"`
-	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[]"`
-	AssuranceLevel             *string        `gorm:"column:assurance_level"`
-	AuthenticatedAt            *time.Time     `gorm:"column:authenticated_at"`
-	RequestedAt                time.Time      `gorm:"column:requested_at"`
-	ExpiresAt                  time.Time      `gorm:"column:expires_at"`
-	CompletedAt                *time.Time     `gorm:"column:completed_at"`
-	CreatedAt                  time.Time      `gorm:"column:created_at"`
+	ID                         uuid.UUID           `gorm:"column:id"`
+	RequestSecretHash          string              `gorm:"column:request_secret_hash"`
+	ClientID                   string              `gorm:"column:client_id"`
+	RedirectURI                string              `gorm:"column:redirect_uri"`
+	ResponseTypes              dbtypes.StringArray `gorm:"column:response_types"`
+	ResponseMode               string              `gorm:"column:response_mode"`
+	RequestedScopes            dbtypes.StringArray `gorm:"column:requested_scopes"`
+	RequestedAudiences         dbtypes.StringArray `gorm:"column:requested_audiences"`
+	Status                     string              `gorm:"column:status"`
+	PrincipalID                *int64              `gorm:"column:principal_id"`
+	ContextType                *string             `gorm:"column:context_type"`
+	TenantMembershipID         *int64              `gorm:"column:tenant_membership_id"`
+	IssuedAuthorizationVersion *int64              `gorm:"column:issued_authorization_version"`
+	GrantedScopes              dbtypes.StringArray `gorm:"column:granted_scopes"`
+	GrantedAudiences           dbtypes.StringArray `gorm:"column:granted_audiences"`
+	AuthenticationMethods      dbtypes.StringArray `gorm:"column:authentication_methods"`
+	AssuranceLevel             *string             `gorm:"column:assurance_level"`
+	AuthenticatedAt            *time.Time          `gorm:"column:authenticated_at"`
+	RequestedAt                time.Time           `gorm:"column:requested_at"`
+	ExpiresAt                  time.Time           `gorm:"column:expires_at"`
+	CompletedAt                *time.Time          `gorm:"column:completed_at"`
+	CreatedAt                  time.Time           `gorm:"column:created_at"`
 }
 
 func (authorizationRequestRow) TableName() string {

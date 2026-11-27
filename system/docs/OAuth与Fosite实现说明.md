@@ -40,7 +40,7 @@ flowchart LR
     Router --> Bridge["Authentication / Consent Bridge"]
     Router --> Provider["Single Fosite Provider"]
     Provider --> Strategy["ADDP Opaque / Device Strategy"]
-    Provider --> Storage["PostgreSQL Storage Adapter"]
+    Provider --> Storage["平台数据库 Storage Adapter"]
     Bridge --> IAM["System IAM Services"]
     Storage --> DB[("system schema")]
     IAM --> DB
@@ -60,9 +60,9 @@ OIDC Claims 和 Headers 的结构能力可以存在于 Fosite Session 实现中�
 
 ## 五、Storage Adapter
 
-同一个 PostgreSQL Adapter 实现当前 Provider 组合需要的全部接口。主要映射：
+System 的 Storage Adapter 消费部署选定的平台数据库。租户外部应用的授权码与 PKCE 会话在 PostgreSQL 和 MySQL 上沿用同一套 Fosite 流程。主要映射如下。
 
-| 协议事实 | PostgreSQL 表 |
+| 协议事实 | 平台数据库表 |
 | --- | --- |
 | OAuth Client | `system.oauth_clients` |
 | 浏览器授权交互 | `system.oauth_authorization_requests` |

@@ -15,9 +15,9 @@ import (
 
 	commonapi "github.com/addp/common/api"
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/addp/system/internal/iam"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/pkce"
 	"gorm.io/gorm/clause"
@@ -333,7 +333,7 @@ func (b *ConsentBridge) DecideAuthorization(
 				"issued_authorization_version": identity.authorizationVersion,
 				"granted_scopes":               row.RequestedScopes,
 				"granted_audiences":            row.RequestedAudiences,
-				"authentication_methods":       pq.StringArray(authContext.Authentication.Methods),
+				"authentication_methods":       dbtypes.StringArray(authContext.Authentication.Methods),
 				"assurance_level":              authContext.Authentication.AssuranceLevel,
 				"authenticated_at":             authContext.Authentication.AuthenticatedAt.UTC(),
 				"completed_at":                 databaseNow,
@@ -672,10 +672,10 @@ func (s *Storage) createAuthorizationRequest(
 		RequestSecretHash:  requestSecretHash,
 		ClientID:           requester.GetClient().GetID(),
 		RedirectURI:        requester.GetRedirectURI().String(),
-		ResponseTypes:      pq.StringArray(append([]string(nil), requester.GetResponseTypes()...)),
+		ResponseTypes:      dbtypes.StringArray(append([]string(nil), requester.GetResponseTypes()...)),
 		ResponseMode:       string(responseMode),
-		RequestedScopes:    pq.StringArray(append([]string(nil), requester.GetRequestedScopes()...)),
-		RequestedAudiences: pq.StringArray(append([]string(nil), requester.GetRequestedAudience()...)),
+		RequestedScopes:    dbtypes.StringArray(append([]string(nil), requester.GetRequestedScopes()...)),
+		RequestedAudiences: dbtypes.StringArray(append([]string(nil), requester.GetRequestedAudience()...)),
 		Status:             "pending",
 		RequestedAt:        databaseNow,
 		ExpiresAt:          expiresAt,

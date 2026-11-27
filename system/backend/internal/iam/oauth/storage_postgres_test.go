@@ -17,6 +17,8 @@ import (
 	"time"
 
 	commonauth "github.com/addp/common/authorization"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"github.com/addp/system/internal/iam"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
@@ -454,238 +456,299 @@ func TestStorageAgainstPostgres(t *testing.T) {
 	})
 
 	t.Run("hosted consent and provider authorization code flow", func(t *testing.T) {
-		providerConfig := ProviderConfig{
-			AccessTokenLifespan:   15 * time.Minute,
-			RefreshTokenLifespan:  30 * 24 * time.Hour,
-			AuthorizeCodeLifespan: 5 * time.Minute,
-			DeviceCodeLifespan:    10 * time.Minute,
-			DevicePollingInterval: 5 * time.Second,
-			DeviceVerificationURL: "http://localhost:5170/oauth/device",
-			TokenEndpointURL:      "http://localhost:8000/api/v1/system/oauth/token",
-		}
-		provider, err := NewProvider(db, providerConfig, StrategyConfig{
-			AccessTokenLifespan:   providerConfig.AccessTokenLifespan,
-			RefreshTokenLifespan:  providerConfig.RefreshTokenLifespan,
-			AuthorizeCodeLifespan: providerConfig.AuthorizeCodeLifespan,
-			DeviceCodeLifespan:    providerConfig.DeviceCodeLifespan,
-			UserCodePepper:        []byte("0123456789abcdef0123456789abcdef"),
-		})
+		exerciseAuthorizationCodeFlow(t, ctx, db, principalID, membershipID, authorizationVersion, false)
+	})
+	t.Run("tenant application consent", func(t *testing.T) {
+		exerciseAuthorizationCodeFlow(t, ctx, db, principalID, membershipID, authorizationVersion, true)
+	})
+}
+
+func TestTenantOAuthCodeFlowAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_OAUTH_CODE_FLOW") != "1" {
+		t.Skip("requires isolated System MySQL installation")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(database.Config{Schema: "system"}, "system", &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	var principalID, membershipID, version int64
+	err = db.Raw(`SELECT p.id,m.id,p.authorization_version FROM system.local_accounts a JOIN system.principals p ON p.id=a.user_id JOIN system.tenant_memberships m ON m.principal_id=p.id JOIN system.tenants t ON t.id=m.tenant_id WHERE a.username='scan-tenant-admin' AND t.code='mysql-scan'`).Row().Scan(&principalID, &membershipID, &version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exerciseAuthorizationCodeFlow(t, t.Context(), db, principalID, membershipID, version, true)
+}
+
+func exerciseAuthorizationCodeFlow(t *testing.T, ctx context.Context, db *gorm.DB, principalID, membershipID, authorizationVersion int64, external bool) {
+	t.Helper()
+	var tenantID int64
+	if err := db.Raw(`SELECT tenant_id FROM system.tenant_memberships WHERE id = ?`, membershipID).
+		Scan(&tenantID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	applicationID := "addp-cli"
+	redirectURI := "http://127.0.0.1:59473/callback"
+	manager := iam.NewOAuthClientManagementService(iam.NewRepository(db))
+	var managed *iam.ManagedOAuthClient
+	pt, ct := iam.PrincipalTypeUser, iam.ContextTypeTenant
+	audit := iam.AuditMetadata{PrincipalID: &principalID, PrincipalType: &pt, ContextType: &ct, TenantID: &tenantID}
+	if external {
+		redirectURI = "https://bi.example.com/oauth/callback"
+		var err error
+		managed, err = manager.Create(ctx, iam.CreateManagedOAuthClientInput{TenantID: tenantID, ActorPrincipalID: principalID, DisplayName: "Tenant BI", RedirectURIs: []string{redirectURI}, Audit: audit})
 		if err != nil {
 			t.Fatal(err)
 		}
-		bridge, err := NewConsentBridge(provider, iam.NewRepository(db), 5*time.Minute)
-		if err != nil {
-			t.Fatal(err)
-		}
-		originalNow := provider.Storage.now
-		originalBridgeNow := bridge.now
-		provider.Storage.now = func() time.Time { return time.Now().UTC().Add(time.Second) }
-		bridge.now = provider.Storage.now
-		defer func() {
-			provider.Storage.now = originalNow
-			bridge.now = originalBridgeNow
-		}()
-		verifier := strings.Repeat("B", 43)
-		challengeDigest := sha256.Sum256([]byte(verifier))
-		challenge := base64.RawURLEncoding.EncodeToString(challengeDigest[:])
-		created, err := bridge.CreateAuthorizationRequest(ctx, AuthorizationRequestInput{
-			ClientID:            "addp-cli",
-			RedirectURI:         "http://127.0.0.1:59473/callback",
-			Scope:               "addp.api",
-			CodeChallenge:       challenge,
-			CodeChallengeMethod: "S256",
-		})
-		if err != nil {
-			t.Fatalf("CreateAuthorizationRequest() error = %v", err)
-		}
+		applicationID = managed.ClientID
+	}
+	providerConfig := ProviderConfig{
+		AccessTokenLifespan:   15 * time.Minute,
+		RefreshTokenLifespan:  30 * 24 * time.Hour,
+		AuthorizeCodeLifespan: 5 * time.Minute,
+		DeviceCodeLifespan:    10 * time.Minute,
+		DevicePollingInterval: 5 * time.Second,
+		DeviceVerificationURL: "http://localhost:5170/oauth/device",
+		TokenEndpointURL:      "http://localhost:8000/api/v1/system/oauth/token",
+	}
+	provider, err := NewProvider(db, providerConfig, StrategyConfig{
+		AccessTokenLifespan:   providerConfig.AccessTokenLifespan,
+		RefreshTokenLifespan:  providerConfig.RefreshTokenLifespan,
+		AuthorizeCodeLifespan: providerConfig.AuthorizeCodeLifespan,
+		DeviceCodeLifespan:    providerConfig.DeviceCodeLifespan,
+		UserCodePepper:        []byte("0123456789abcdef0123456789abcdef"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge, err := NewConsentBridge(provider, iam.NewRepository(db), 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalNow := provider.Storage.now
+	originalBridgeNow := bridge.now
+	provider.Storage.now = func() time.Time { return time.Now().UTC().Add(time.Second) }
+	bridge.now = provider.Storage.now
+	defer func() {
 		provider.Storage.now = originalNow
 		bridge.now = originalBridgeNow
-		if !strings.HasPrefix(created.RequestSecret, authorizationRequestSecretPrefix) || created.ExpiresIn != 300 {
-			t.Fatalf("created authorization request = %#v", created)
+	}()
+	verifier := strings.Repeat("B", 43)
+	challengeDigest := sha256.Sum256([]byte(verifier))
+	challenge := base64.RawURLEncoding.EncodeToString(challengeDigest[:])
+	created, err := bridge.CreateAuthorizationRequest(ctx, AuthorizationRequestInput{
+		ClientID:            applicationID,
+		RedirectURI:         redirectURI,
+		Scope:               "addp.api",
+		CodeChallenge:       challenge,
+		CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatalf("CreateAuthorizationRequest() error = %v", err)
+	}
+	provider.Storage.now = originalNow
+	bridge.now = originalBridgeNow
+	if !strings.HasPrefix(created.RequestSecret, authorizationRequestSecretPrefix) || created.ExpiresIn != 300 {
+		t.Fatal("unexpected authorization request secret format or lifetime")
+	}
+	var requestRow authorizationRequestRow
+	if err := db.Where("id = ?", created.RequestID).Take(&requestRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	var pkceRow pkceSessionRow
+	if err := db.Where("authorization_request_id = ?", created.RequestID).Take(&pkceRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !requestRow.RequestedAt.Equal(requestRow.CreatedAt) ||
+		requestRow.ExpiresAt.Sub(requestRow.CreatedAt) != 5*time.Minute ||
+		!pkceRow.CreatedAt.Equal(requestRow.CreatedAt) || !pkceRow.ExpiresAt.Equal(requestRow.ExpiresAt) {
+		t.Fatal("authorization request and PKCE creation do not share database time and the requested lifetime")
+	}
+	principalIDText := strconv.FormatInt(principalID, 10)
+	tenantIDText := strconv.FormatInt(tenantID, 10)
+	membershipIDText := strconv.FormatInt(membershipID, 10)
+	clientID := "addp-web"
+	authContext := commonauth.AuthContext{
+		SchemaVersion: commonauth.AuthContextSchemaVersion,
+		Principal:     commonauth.AuthPrincipal{Type: "user", ID: principalIDText},
+		Context: commonauth.AuthSessionContext{
+			Type:               "tenant",
+			TenantID:           &tenantIDText,
+			TenantMembershipID: &membershipIDText,
+		},
+		Authentication: commonauth.AuthenticationFacts{
+			Methods:         []string{"password"},
+			AssuranceLevel:  "aal1",
+			AuthenticatedAt: time.Now().UTC().Add(-time.Minute),
+		},
+		Client: commonauth.ClientConstraints{
+			ClientID:  &clientID,
+			Audiences: []string{"addp.api"},
+			ScopeMode: "unrestricted",
+			Scopes:    []string{},
+		},
+		Organization: commonauth.OrganizationContext{
+			Departments:   []commonauth.DepartmentMembership{},
+			ProjectGroups: []commonauth.ProjectGroupMembership{},
+		},
+		Authorization: commonauth.AuthorizationFacts{
+			AuthorizationVersion: strconv.FormatInt(authorizationVersion, 10),
+			RoleAssignments:      []commonauth.RoleAssignment{},
+		},
+		Token: commonauth.TokenFacts{
+			Type:      "first_party_access_token",
+			IssuedAt:  time.Now().UTC().Add(-time.Minute),
+			ExpiresAt: time.Now().UTC().Add(14 * time.Minute),
+		},
+	}
+	view, err := bridge.GetAuthorizationRequest(ctx, created.RequestID, authContext)
+	if err != nil || view.ClientID != applicationID || view.Scope != "addp.api" {
+		t.Fatalf("GetAuthorizationRequest() = %#v, %v", view, err)
+	}
+	decision, err := bridge.DecideAuthorization(
+		ctx,
+		created.RequestID,
+		AuthorizationDecisionApprove,
+		authContext,
+		iam.AuditMetadata{},
+	)
+	if err != nil {
+		var oauthError *fosite.RFC6749Error
+		if errors.As(err, &oauthError) {
+			t.Fatalf("DecideAuthorization() error = %+v debug=%q cause=%v", err, oauthError.Debug(), oauthError.Cause())
 		}
-		var requestRow authorizationRequestRow
-		if err := db.Where("id = ?", created.RequestID).Take(&requestRow).Error; err != nil {
-			t.Fatal(err)
-		}
-		var pkceRow pkceSessionRow
-		if err := db.Where("authorization_request_id = ?", created.RequestID).Take(&pkceRow).Error; err != nil {
-			t.Fatal(err)
-		}
-		if !requestRow.RequestedAt.Equal(requestRow.CreatedAt) ||
-			requestRow.ExpiresAt.Sub(requestRow.CreatedAt) != 5*time.Minute ||
-			!pkceRow.CreatedAt.Equal(requestRow.CreatedAt) || !pkceRow.ExpiresAt.Equal(requestRow.ExpiresAt) {
-			t.Fatal("authorization request and PKCE creation do not share database time and the requested lifetime")
-		}
-		var tenantID int64
-		if err := db.Raw(`SELECT tenant_id FROM system.tenant_memberships WHERE id = ?`, membershipID).
-			Scan(&tenantID).Error; err != nil {
-			t.Fatal(err)
-		}
-		principalIDText := strconv.FormatInt(principalID, 10)
-		tenantIDText := strconv.FormatInt(tenantID, 10)
-		membershipIDText := strconv.FormatInt(membershipID, 10)
-		clientID := "addp-web"
-		authContext := commonauth.AuthContext{
-			SchemaVersion: commonauth.AuthContextSchemaVersion,
-			Principal:     commonauth.AuthPrincipal{Type: "user", ID: principalIDText},
-			Context: commonauth.AuthSessionContext{
-				Type:               "tenant",
-				TenantID:           &tenantIDText,
-				TenantMembershipID: &membershipIDText,
-			},
-			Authentication: commonauth.AuthenticationFacts{
-				Methods:         []string{"password"},
-				AssuranceLevel:  "aal1",
-				AuthenticatedAt: time.Now().UTC().Add(-time.Minute),
-			},
-			Client: commonauth.ClientConstraints{
-				ClientID:  &clientID,
-				Audiences: []string{"addp.api"},
-				ScopeMode: "unrestricted",
-				Scopes:    []string{},
-			},
-			Organization: commonauth.OrganizationContext{
-				Departments:   []commonauth.DepartmentMembership{},
-				ProjectGroups: []commonauth.ProjectGroupMembership{},
-			},
-			Authorization: commonauth.AuthorizationFacts{
-				AuthorizationVersion: strconv.FormatInt(authorizationVersion, 10),
-				RoleAssignments:      []commonauth.RoleAssignment{},
-			},
-			Token: commonauth.TokenFacts{
-				Type:      "first_party_access_token",
-				IssuedAt:  time.Now().UTC().Add(-time.Minute),
-				ExpiresAt: time.Now().UTC().Add(14 * time.Minute),
-			},
-		}
-		view, err := bridge.GetAuthorizationRequest(ctx, created.RequestID, authContext)
-		if err != nil || view.ClientID != "addp-cli" || view.Scope != "addp.api" {
-			t.Fatalf("GetAuthorizationRequest() = %#v, %v", view, err)
-		}
-		decision, err := bridge.DecideAuthorization(
-			ctx,
-			created.RequestID,
-			AuthorizationDecisionApprove,
-			authContext,
-			iam.AuditMetadata{},
-		)
-		if err != nil {
-			var oauthError *fosite.RFC6749Error
-			if errors.As(err, &oauthError) {
-				t.Fatalf("DecideAuthorization() error = %+v debug=%q cause=%v", err, oauthError.Debug(), oauthError.Cause())
-			}
-			t.Fatalf("DecideAuthorization() error = %+v", err)
-		}
-		redirect, err := url.Parse(decision.RedirectURL)
-		if err != nil || redirect.Query().Get("state") != created.RequestID ||
-			!strings.HasPrefix(redirect.Query().Get("code"), authorizeCodePrefix) {
-			t.Fatalf("authorization redirect = %q, %v", decision.RedirectURL, err)
-		}
-		code := redirect.Query().Get("code")
+		t.Fatalf("DecideAuthorization() error = %+v", err)
+	}
+	redirect, err := url.Parse(decision.RedirectURL)
+	if err != nil || redirect.Query().Get("state") != created.RequestID ||
+		!strings.HasPrefix(redirect.Query().Get("code"), authorizeCodePrefix) {
+		t.Fatal("authorization redirect did not contain expected state and code")
+	}
+	code := redirect.Query().Get("code")
 
-		wrongForm := url.Values{
-			"grant_type":    []string{"authorization_code"},
-			"client_id":     []string{"addp-cli"},
-			"code":          []string{code},
-			"redirect_uri":  []string{"http://127.0.0.1:59473/callback"},
-			"code_verifier": []string{strings.Repeat("C", 43)},
-		}
-		wrongRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(wrongForm.Encode()))
-		wrongRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		if _, err := provider.OAuth2.NewAccessRequest(ctx, wrongRequest, NewIAMSession()); err == nil {
-			t.Fatal("wrong PKCE verifier was accepted")
-		}
-		var verifiedCount int64
-		if err := db.Raw(`
+	wrongForm := url.Values{
+		"grant_type":    []string{"authorization_code"},
+		"client_id":     []string{applicationID},
+		"code":          []string{code},
+		"redirect_uri":  []string{redirectURI},
+		"code_verifier": []string{strings.Repeat("C", 43)},
+	}
+	wrongRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(wrongForm.Encode()))
+	wrongRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if _, err := provider.OAuth2.NewAccessRequest(ctx, wrongRequest, NewIAMSession()); err == nil {
+		t.Fatal("wrong PKCE verifier was accepted")
+	}
+	var verifiedCount int64
+	if err := db.Raw(`
 			SELECT count(*) FROM system.oauth_pkce_sessions
 			WHERE authorization_request_id = ? AND verified_at IS NOT NULL
 		`, created.RequestID).Scan(&verifiedCount).Error; err != nil {
-			t.Fatal(err)
-		}
-		if verifiedCount != 0 {
-			t.Fatal("wrong PKCE verifier consumed the PKCE session")
-		}
+		t.Fatal(err)
+	}
+	if verifiedCount != 0 {
+		t.Fatal("wrong PKCE verifier consumed the PKCE session")
+	}
 
-		tokenForm := url.Values{
-			"grant_type":    []string{"authorization_code"},
-			"client_id":     []string{"addp-cli"},
-			"code":          []string{code},
-			"redirect_uri":  []string{"http://127.0.0.1:59473/callback"},
-			"code_verifier": []string{verifier},
-		}
-		tokenRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(tokenForm.Encode()))
-		tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		tokenAuditContext := WithTransactionAudit(ctx, iam.AuditEvent{
-			EventName:  "oauth.token.issued",
-			Result:     iam.AuditResultSucceeded,
-			RiskLevel:  iam.AuditRiskMedium,
-			ModuleName: "system",
-			EntityType: "oauth_security_event",
-			EntityID:   "oauth.token.issued",
-			Details: map[string]any{
-				"client_id":  "addp-cli",
-				"grant_type": "authorization_code",
-				"scope":      "addp.api",
-			},
-		})
-		tokenRequest = tokenRequest.WithContext(tokenAuditContext)
-		accessRequest, err := provider.OAuth2.NewAccessRequest(tokenAuditContext, tokenRequest, NewIAMSession())
-		if err != nil {
-			t.Fatalf("NewAccessRequest() error = %v", err)
-		}
-		accessResponse, err := provider.OAuth2.NewAccessResponse(tokenAuditContext, accessRequest)
-		if err != nil {
-			var oauthError *fosite.RFC6749Error
-			if errors.As(err, &oauthError) {
-				t.Fatalf("NewAccessResponse() error = %v cause=%v", err, oauthError.Cause())
-			}
-			t.Fatalf("NewAccessResponse() error = %v", err)
-		}
-		recorder := httptest.NewRecorder()
-		provider.OAuth2.WriteAccessResponse(ctx, recorder, accessRequest, accessResponse)
-		body, err := io.ReadAll(recorder.Result().Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var tokenResponse map[string]interface{}
-		if err := json.Unmarshal(body, &tokenResponse); err != nil {
-			t.Fatalf("decode token response %q: %v", body, err)
-		}
-		if recorder.Code != http.StatusOK || !strings.HasPrefix(tokenResponse["access_token"].(string), accessTokenPrefix) ||
-			!strings.HasPrefix(tokenResponse["refresh_token"].(string), refreshTokenPrefix) {
-			t.Fatalf("token response status=%d body=%s", recorder.Code, body)
-		}
-		authContextService, err := iam.NewAuthContextService(iam.NewRepository(db))
-		if err != nil {
-			t.Fatal(err)
-		}
-		resolved, err := authContextService.ResolveUserAccessToken(
-			ctx,
-			tokenResponse["access_token"].(string),
-		)
-		if err != nil {
-			t.Fatalf("ResolveUserAccessToken() error = %v", err)
-		}
-		if resolved.Token.Type != "oauth_access_token" || resolved.Client.ClientID == nil ||
-			*resolved.Client.ClientID != "addp-cli" || resolved.Client.ScopeMode != "restricted" ||
-			len(resolved.Client.Scopes) != 1 || resolved.Client.Scopes[0] != "addp.api" {
-			t.Fatalf("OAuth AuthContext = %#v", resolved)
-		}
-		var auditCount int64
-		if err := db.Raw(`
-			SELECT count(*) FROM system.audit_logs
-			WHERE event_name = 'oauth.token.issued'
-			  AND principal_id = ?
-			  AND context_type = 'tenant'
-			  AND tenant_id = ?
-			  AND details = '{"client_id":"addp-cli","grant_type":"authorization_code","scope":"addp.api"}'::jsonb
-		`, principalID, tenantID).Scan(&auditCount).Error; err != nil {
-			t.Fatal(err)
-		}
-		if auditCount != 1 {
-			t.Fatalf("OAuth token audit count = %d, want 1", auditCount)
-		}
+	tokenForm := url.Values{
+		"grant_type":    []string{"authorization_code"},
+		"client_id":     []string{applicationID},
+		"code":          []string{code},
+		"redirect_uri":  []string{redirectURI},
+		"code_verifier": []string{verifier},
+	}
+	tokenRequest := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(tokenForm.Encode()))
+	tokenRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	tokenAuditContext := WithTransactionAudit(ctx, iam.AuditEvent{
+		EventName:  "oauth.token.issued",
+		Result:     iam.AuditResultSucceeded,
+		RiskLevel:  iam.AuditRiskMedium,
+		ModuleName: "system",
+		EntityType: "oauth_security_event",
+		EntityID:   "oauth.token.issued",
+		Details: map[string]any{
+			"client_id":  applicationID,
+			"grant_type": "authorization_code",
+			"scope":      "addp.api",
+		},
 	})
+	tokenRequest = tokenRequest.WithContext(tokenAuditContext)
+	accessRequest, err := provider.OAuth2.NewAccessRequest(tokenAuditContext, tokenRequest, NewIAMSession())
+	if err != nil {
+		t.Fatalf("NewAccessRequest() error = %v", err)
+	}
+	accessResponse, err := provider.OAuth2.NewAccessResponse(tokenAuditContext, accessRequest)
+	if err != nil {
+		var oauthError *fosite.RFC6749Error
+		if errors.As(err, &oauthError) {
+			t.Fatalf("NewAccessResponse() error = %v cause=%v", err, oauthError.Cause())
+		}
+		t.Fatalf("NewAccessResponse() error = %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	provider.OAuth2.WriteAccessResponse(ctx, recorder, accessRequest, accessResponse)
+	body, err := io.ReadAll(recorder.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tokenResponse map[string]interface{}
+	if err := json.Unmarshal(body, &tokenResponse); err != nil {
+		t.Fatalf("decode token response: %v", err)
+	}
+	if recorder.Code != http.StatusOK || !strings.HasPrefix(tokenResponse["access_token"].(string), accessTokenPrefix) ||
+		!strings.HasPrefix(tokenResponse["refresh_token"].(string), refreshTokenPrefix) {
+		t.Fatalf("unexpected token response, status=%d", recorder.Code)
+	}
+	authContextService, err := iam.NewAuthContextService(iam.NewRepository(db))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := authContextService.ResolveUserAccessToken(
+		ctx,
+		tokenResponse["access_token"].(string),
+	)
+	if err != nil {
+		t.Fatalf("ResolveUserAccessToken() error = %v", err)
+	}
+	if resolved.Token.Type != "oauth_access_token" || resolved.Client.ClientID == nil ||
+		*resolved.Client.ClientID != applicationID || resolved.Client.ScopeMode != "restricted" ||
+		len(resolved.Client.Scopes) != 1 || resolved.Client.Scopes[0] != "addp.api" {
+		t.Fatalf("OAuth AuthContext = %#v", resolved)
+	}
+	if _, err := provider.Storage.GetAuthorizeCodeSession(ctx, opaqueSignature(code), NewIAMSession()); !errors.Is(err, fosite.ErrInvalidatedAuthorizeCode) {
+		t.Fatalf("authorization code after exchange: want invalidated, got %v", err)
+	}
+	var audits []struct{ Details []byte }
+	if err := db.Raw(`SELECT details FROM system.audit_logs WHERE event_name='oauth.token.issued' AND principal_id=? AND context_type='tenant' AND tenant_id=?`, principalID, tenantID).Scan(&audits).Error; err != nil {
+		t.Fatal(err)
+	}
+	matches := 0
+	for _, row := range audits {
+		var details map[string]any
+		if err := json.Unmarshal(row.Details, &details); err != nil {
+			t.Fatal(err)
+		}
+		if details["client_id"] == applicationID && details["grant_type"] == "authorization_code" && details["scope"] == "addp.api" && len(details) == 3 {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("got %d matching token audits, want 1", matches)
+	}
+	if managed != nil {
+		if _, err := manager.Disable(ctx, iam.ChangeManagedOAuthClientStatusInput{TenantID: tenantID, ActorPrincipalID: principalID, ClientID: managed.ClientID, Version: managed.Version, Reason: "authorization code integration", Audit: audit}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := authContextService.ResolveUserAccessToken(ctx, tokenResponse["access_token"].(string))
+		var invalid *iam.CredentialValidationError
+		if !errors.As(err, &invalid) || invalid.Reason != iam.CredentialInvalidTokenRevoked {
+			t.Fatalf("expected invalid credential after disable, got %v", err)
+		}
+	}
 }
 
 const testCodeChallenge = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"

@@ -2,7 +2,7 @@
 
 更新日期：2026-08-28
 
-状态：正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码使用受控 Fosite 唯一主路径。System 负责 Provider、PostgreSQL Storage 和协议事务验收，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前发布证据只覆盖 macOS Keychain，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS。
+状态：正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码使用受控 Fosite 唯一主路径。System 负责 Provider、协议存储和事务验收。租户外部应用的授权码及 S256 PKCE 会话由所选平台数据库持久化，部署入口准备表和约束，两种数据库执行同一授权流程，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前发布证据只覆盖 macOS Keychain，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS。
 
 System 协议验收与正式 `addp` CLI 使用同一个 `addp-cli` 公共客户端和同一组 OAuth 端点，不保留测试专用授权实现。CLI 的发布、凭据存储、上下文确认和命令契约见第七节；协议与产品 E2E 必须共同通过后才能发布。
 
