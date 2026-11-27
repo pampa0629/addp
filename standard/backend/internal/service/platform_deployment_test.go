@@ -84,6 +84,7 @@ func TestInstalledElementPublication(t *testing.T) {
 	if _, err = svc.GetRevision(t.Context(), el.ID, revision, tenant); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("withdrawn_revision_content", func(t *testing.T) { exerciseWithdrawnRevisionContent(t, db) })
 	t.Run("domain reference evidence", func(t *testing.T) {
 		checkInstalledDomainReferences(t, db, tenant, actor, el.ID)
 	})

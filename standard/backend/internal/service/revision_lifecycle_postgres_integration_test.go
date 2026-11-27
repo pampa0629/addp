@@ -25,6 +25,11 @@ func TestPostgresStandardRevisionLifecycleRetainsWithdrawnContent(t *testing.T) 
 			t.Errorf("close PostgreSQL: %v", err)
 		}
 	})
+	exerciseWithdrawnRevisionContent(t, db)
+}
+
+func exerciseWithdrawnRevisionContent(t *testing.T, db *gorm.DB) {
+	t.Helper()
 	from := time.Now().UTC().Add(-time.Hour)
 
 	t.Run("element", func(t *testing.T) {
