@@ -51,9 +51,7 @@ type CaptureControl interface {
 	HasStopInitiatedGeneration(ctx context.Context, taskID, tenantID uint) (bool, error)
 }
 
-type SchemaChangeInspector interface {
-	InspectAdditiveFields(ctx context.Context, task *models.TransferTask, sourceFields []string) ([]models.SchemaChangeField, error)
-}
+type SchemaChangeInspector func(context.Context, planner.DatabaseCDCTaskSpec, planner.DatabaseCDCBindings, []string) ([]models.SchemaChangeField, error)
 
 type TaskExecutionEngine interface {
 	ExecuteExecution(ctx context.Context, executionID uint) error

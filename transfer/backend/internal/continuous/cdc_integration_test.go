@@ -222,7 +222,7 @@ func runIntegrationPostgreSQLCDCDataPlaneViaPublicAPIFullLifecycle(t *testing.T,
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
-	taskService.SetSchemaChangeInspector(capturePlanResolver)
+	taskService.SetSchemaChangeInspector(capture.InspectAdditiveFields)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(700000+suffix%90000), 700001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, cdcDataTaskConfig(schema, sourceTable, target))
 	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)

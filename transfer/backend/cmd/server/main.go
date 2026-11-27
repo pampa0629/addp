@@ -250,7 +250,7 @@ func main() {
 			log.Fatalf("初始化 Transfer capture supervisor 失败: %v", err)
 		}
 		taskService.SetCaptureControl(captureSupervisor)
-		taskService.SetSchemaChangeInspector(capturePlanResolver)
+		taskService.SetSchemaChangeInspector(capture.InspectAdditiveFields)
 		cleanupService.SetCaptureControl(captureSupervisor)
 		go func() {
 			if err := captureSupervisor.Run(runtimeContext); err != nil && err != context.Canceled {

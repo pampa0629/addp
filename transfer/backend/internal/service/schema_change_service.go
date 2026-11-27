@@ -22,6 +22,20 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+func (s *TaskService) inspectSchemaChangeFields(ctx context.Context, task *models.TransferTask, unexpected []string) ([]models.SchemaChangeField, planner.DatabaseCDCBindings, error) {
+	spec, err := planner.ParseDatabaseCDCTaskSpec(task.Config)
+	if err != nil {
+		return nil, planner.DatabaseCDCBindings{}, err
+	}
+	targetDescriptor := planner.DescriptorEngineResolver{Context: ctx, TenantID: task.TenantID, Lookup: s.engineDescriptor}
+	bindings, err := planner.ResolveDatabaseCDCEndpoints(spec, planner.BindEngineResolver(s.engineResolver, task.TenantID), targetDescriptor)
+	if err != nil {
+		return nil, planner.DatabaseCDCBindings{}, err
+	}
+	fields, err := s.schemaInspector(ctx, spec, bindings, unexpected)
+	return fields, bindings, err
+}
+
 func (s *TaskService) GetSchemaChange(ctx context.Context, taskID, tenantID uint) (*models.SchemaChangeRequestView, error) {
 	task, err := s.GetTask(ctx, taskID, tenantID)
 	if err != nil {
@@ -56,7 +70,7 @@ func (s *TaskService) GetSchemaChange(ctx context.Context, taskID, tenantID uint
 		view.ApprovalBlockedReason = "control_unavailable"
 		return view, nil
 	}
-	fields, err := s.schemaInspector.InspectAdditiveFields(ctx, task, unexpected)
+	fields, _, err := s.inspectSchemaChangeFields(ctx, task, unexpected)
 	if err != nil {
 		view.ApprovalBlockedReason = "source_validation_failed"
 		return view, nil
@@ -130,7 +144,7 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		if !eligible {
 			return ErrSchemaChangeNotAdditive
 		}
-		inspected, err := s.schemaInspector.InspectAdditiveFields(ctx, &task, unexpected)
+		inspected, bindings, err := s.inspectSchemaChangeFields(ctx, &task, unexpected)
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrSchemaChangeApprovalConflict, err)
 		}
@@ -157,8 +171,7 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 			request.ToRevision != request.FromRevision+1 || resource.Status == models.CaptureStatusStopped {
 			return ErrSchemaChangeApprovalConflict
 		}
-		resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
-		continuousPlan, err := planner.BuildDatabaseCDCContinuousPlan(updatedSpec, resolver, planner.DatabaseCDCStreamBinding{
+		continuousPlan, err := bindings.BuildContinuousPlan(updatedSpec, planner.DatabaseCDCStreamBinding{
 			Provider: string(resource.SourceType), ConnectorName: resource.ConnectorName, ConsumerGroup: resource.ConsumerGroup,
 			SourceIdentity: resource.SourceIdentity, Database: resource.SourceDatabase,
 			Schema: resource.SourceSchema, Table: resource.SourceTable,
@@ -175,7 +188,15 @@ func (s *TaskService) ApproveSchemaChange(ctx context.Context, taskID, tenantID,
 		if !ok {
 			return fmt.Errorf("target engine does not implement partitioned table change apply")
 		}
-		if err := preparer.PreparePartitionedTableChangeApply(ctx, continuousPlan.Target.ConnInfo, continuousPlan.Target.Path, engineplugin.PartitionedTableChangeApplyOptions{
+		resolver := planner.BindEngineResolver(s.engineResolver, tenantID)
+		target, err := resolver.ResolveEngine(planner.EngineRef{ID: continuousPlan.Target.EngineID, Type: continuousPlan.TargetType})
+		if err != nil {
+			return fmt.Errorf("%w: resolve target connection: %v", ErrSchemaChangeApprovalConflict, err)
+		}
+		if target.EngineID != bindings.Target.EngineID || target.EngineVersion != bindings.Target.EngineVersion {
+			return fmt.Errorf("%w: target engine changed since inspection", ErrSchemaChangeApprovalConflict)
+		}
+		if err := preparer.PreparePartitionedTableChangeApply(ctx, target.ConnInfo, continuousPlan.Target.Path, engineplugin.PartitionedTableChangeApplyOptions{
 			ApplyIdentity: task.ApplyIdentity, SourceIdentity: resource.SourceIdentity,
 			Fields: continuousPlan.Target.Fields, SpatialInfo: continuousPlan.Target.SpatialInfo,
 			Keys: continuousPlan.Target.Keys, RequireTargetAbsent: false,

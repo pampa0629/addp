@@ -230,6 +230,10 @@ func (r *DatabasePlanResolver) resolveBindings(task *models.TransferTask) (*Capt
 	if err != nil {
 		return nil, err
 	}
+	return databaseCapturePlan(spec, bindings)
+}
+
+func databaseCapturePlan(spec planner.DatabaseCDCTaskSpec, bindings planner.DatabaseCDCBindings) (*CapturePlan, error) {
 	sourceLocator, _ := spec.Source.ResourceLocator()
 	targetParent, _ := spec.Target.ParentResourceLocator()
 	sourceKeys, targetKeys, err := planner.DatabaseCDCSourceToTargetKeys(spec)

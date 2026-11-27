@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/datatype"
 	mysqltypes "github.com/addp/common/format/mappers/mysql"
 	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/planner"
 )
 
 type postgreSQLSchemaFieldFact struct {
@@ -27,12 +28,12 @@ type mySQLSchemaFieldFact struct {
 
 // InspectAdditiveFields 重新读取当前源表，只返回本次阻塞消息明确报告的新增字段事实。
 // 其他尚未到达 committed offset 的源表新增字段不得提前进入当前 revision。
-func (r *DatabasePlanResolver) InspectAdditiveFields(ctx context.Context, task *models.TransferTask, sourceFields []string) ([]models.SchemaChangeField, error) {
+func InspectAdditiveFields(ctx context.Context, spec planner.DatabaseCDCTaskSpec, bindings planner.DatabaseCDCBindings, sourceFields []string) ([]models.SchemaChangeField, error) {
 	requested, err := normalizeAdditiveSourceFields(sourceFields)
 	if err != nil {
 		return nil, err
 	}
-	plan, err := r.resolveBindings(task)
+	plan, err := databaseCapturePlan(spec, bindings)
 	if err != nil {
 		return nil, err
 	}

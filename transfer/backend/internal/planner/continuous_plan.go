@@ -160,6 +160,19 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	if resolver == nil {
 		return nil, fmt.Errorf("database CDC continuous plan requires engine resolver")
 	}
+	return buildDatabaseCDCContinuousPlan(spec, stream, pollBatchSize, func() (DatabaseCDCBindings, error) {
+		return ResolveDatabaseCDCBindings(spec, resolver)
+	})
+}
+
+// BuildContinuousPlan uses the endpoints already inspected for this schema approval.
+func (bindings DatabaseCDCBindings) BuildContinuousPlan(spec DatabaseCDCTaskSpec, stream DatabaseCDCStreamBinding, pollBatchSize int) (*ContinuousPlan, error) {
+	return buildDatabaseCDCContinuousPlan(spec, stream, pollBatchSize, func() (DatabaseCDCBindings, error) {
+		return bindings, nil
+	})
+}
+
+func buildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, stream DatabaseCDCStreamBinding, pollBatchSize int, resolve func() (DatabaseCDCBindings, error)) (*ContinuousPlan, error) {
 	if err := validateDatabaseCDCTaskSpec(spec); err != nil {
 		return nil, err
 	}
@@ -170,7 +183,7 @@ func BuildDatabaseCDCContinuousPlan(spec DatabaseCDCTaskSpec, resolver EngineRes
 	if pollBatchSize <= 0 {
 		pollBatchSize = 1000
 	}
-	bindings, err := ResolveDatabaseCDCBindings(spec, resolver)
+	bindings, err := resolve()
 	if err != nil {
 		return nil, err
 	}

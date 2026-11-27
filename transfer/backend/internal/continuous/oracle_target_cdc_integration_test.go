@@ -134,7 +134,7 @@ func runIntegrationDatabaseCDCToOracleTargetLifecycle(t *testing.T, sourceType s
 	taskService.SetEngineResolver(resolver)
 	taskService.SetExecutionService(executionService)
 	taskService.SetCaptureControl(captureSupervisor)
-	taskService.SetSchemaChangeInspector(capturePlanResolver)
+	taskService.SetSchemaChangeInspector(capture.InspectAdditiveFields)
 	apiRouter := cdcDataAPIRouter(t, taskService, uint(940000+suffix%50000), 940001)
 	task := cdcDataCreateTaskViaAPI(t, apiRouter, databaseCDCToOracleTargetTaskConfig(sourceNamespace, sourceTable, target))
 	defer cleanupCDCDataInfraRows(t, infraDB, task.ID)

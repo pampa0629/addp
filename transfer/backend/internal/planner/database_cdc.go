@@ -142,7 +142,12 @@ type DatabaseCDCBindings struct {
 
 // ResolveDatabaseCDCBindings 是数据库 CDC provider 判定的唯一入口。
 func ResolveDatabaseCDCBindings(spec DatabaseCDCTaskSpec, resolver EngineResolver) (DatabaseCDCBindings, error) {
-	if resolver == nil {
+	return ResolveDatabaseCDCEndpoints(spec, resolver, resolver)
+}
+
+// ResolveDatabaseCDCEndpoints resolves source and target according to their respective access requirements.
+func ResolveDatabaseCDCEndpoints(spec DatabaseCDCTaskSpec, sourceResolver, targetResolver EngineResolver) (DatabaseCDCBindings, error) {
+	if sourceResolver == nil || targetResolver == nil {
 		return DatabaseCDCBindings{}, fmt.Errorf("database CDC requires engine resolver")
 	}
 	sourceRef, err := spec.Source.EngineRef()
@@ -153,11 +158,11 @@ func ResolveDatabaseCDCBindings(spec DatabaseCDCTaskSpec, resolver EngineResolve
 	if err != nil {
 		return DatabaseCDCBindings{}, err
 	}
-	source, err := resolver.ResolveEngine(sourceRef)
+	source, err := sourceResolver.ResolveEngine(sourceRef)
 	if err != nil {
 		return DatabaseCDCBindings{}, fmt.Errorf("resolve database CDC source engine: %w", err)
 	}
-	target, err := resolver.ResolveEngine(targetRef)
+	target, err := targetResolver.ResolveEngine(targetRef)
 	if err != nil {
 		return DatabaseCDCBindings{}, fmt.Errorf("resolve database CDC target engine: %w", err)
 	}
