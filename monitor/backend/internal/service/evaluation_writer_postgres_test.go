@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,7 +12,25 @@ import (
 
 func TestIntegrationPostgresEvaluationWriterTakeover(t *testing.T) {
 	f := newLogRetryFixture(t, "webhook")
-	db := f.db
+	exerciseEvaluationWriterTakeover(t, f.db, f.incident.ID, func(ctx context.Context, old *evaluationWriter) error {
+		// Disconnect only the backend that owns the fixture's write transaction.
+		var pid int
+		if err := old.transaction(ctx, f.db, func(tx *gorm.DB) error { return tx.Raw("SELECT pg_backend_pid()").Scan(&pid).Error }); err != nil {
+			return err
+		}
+		var killed bool
+		if err := f.db.WithContext(ctx).Raw("SELECT pg_terminate_backend(?, 5000)", pid).Scan(&killed).Error; err != nil {
+			return err
+		}
+		if !killed {
+			return fmt.Errorf("test writer %d did not disconnect", pid)
+		}
+		return nil
+	})
+}
+
+func exerciseEvaluationWriterTakeover(t *testing.T, db *gorm.DB, incidentID uint, disconnect func(context.Context, *evaluationWriter) error) {
+	t.Helper()
 	ctx, stop := context.WithTimeout(t.Context(), 15*time.Second)
 	defer stop()
 	run := func(ctx context.Context, acquired chan<- *evaluationWriter, done chan<- struct{}, drain <-chan struct{}) {
@@ -54,21 +73,14 @@ func TestIntegrationPostgresEvaluationWriterTakeover(t *testing.T) {
 		t.Fatal("two active evaluators")
 	case <-time.After(350 * time.Millisecond):
 	}
-	// Use the same transaction path as a periodic rule. Only terminate the
-	// backend whose identity we read from this test's actual write transaction.
-	var pid int
-	if err := old.transaction(ctx, db, func(tx *gorm.DB) error { return tx.Raw("SELECT pg_backend_pid()").Scan(&pid).Error }); err != nil {
-		t.Fatal(err)
-	}
-	var killed bool
-	if err := db.WithContext(ctx).Raw("SELECT pg_terminate_backend(?, 5000)", pid).Scan(&killed).Error; err != nil || !killed {
-		t.Fatalf("disconnect test writer: %v %v", killed, err)
+	if err := disconnect(ctx, old); err != nil {
+		t.Fatalf("disconnect test writer: %v", err)
 	}
 	// The old evaluator is still draining when the standby acquires the lock.
 	next := take(second)
 	update := func(w *evaluationWriter, label string) error {
 		return w.transaction(ctx, db, func(tx *gorm.DB) error {
-			return tx.Model(&models.PlatformAlertIncident{}).Where("id=?", f.incident.ID).UpdateColumn("severity", label).Error
+			return tx.Model(&models.PlatformAlertIncident{}).Where("id=?", incidentID).UpdateColumn("severity", label).Error
 		})
 	}
 	if err := update(next, "warning"); err != nil {
@@ -78,7 +90,7 @@ func TestIntegrationPostgresEvaluationWriterTakeover(t *testing.T) {
 		t.Fatal("disconnected writer committed stale result")
 	}
 	var stored models.PlatformAlertIncident
-	if err := db.First(&stored, f.incident.ID).Error; err != nil || stored.Severity != "warning" {
+	if err := db.First(&stored, incidentID).Error; err != nil || stored.Severity != "warning" {
 		t.Fatalf("takeover state: %q, %v", stored.Severity, err)
 	}
 }

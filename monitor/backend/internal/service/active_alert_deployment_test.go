@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"os"
 	"testing"
@@ -67,6 +68,26 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 		}
 	})
 	t.Run("concurrent first evaluations", func(t *testing.T) { checkConcurrentPlatformAlertEvaluations(t, db) })
+	t.Run("evaluation writer takeover", func(t *testing.T) {
+		now := time.Now().UTC()
+		row := models.PlatformAlertIncident{
+			Category: models.PlatformAlertCategoryLog, SubjectKind: models.PlatformAlertSubjectLogObserver, SubjectID: uuid.NewString(),
+			Signal: "test", Severity: "critical", Status: "open", OpenedAt: now, LastObservedAt: now,
+		}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		exerciseEvaluationWriterTakeover(t, db, row.ID, func(_ context.Context, writer *evaluationWriter) error {
+			writer.mu.Lock()
+			defer writer.mu.Unlock()
+			// A bad connection is discarded, closing only this fixture's session.
+			err := writer.conn.Raw(func(any) error { return driver.ErrBadConn })
+			if errors.Is(err, driver.ErrBadConn) {
+				return nil
+			}
+			return err
+		})
+	})
 	t.Run("configuration compare and swap", func(t *testing.T) {
 		tx := db.Begin()
 		if tx.Error != nil {
