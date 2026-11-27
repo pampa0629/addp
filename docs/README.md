@@ -57,7 +57,7 @@
 - [Workbench 后续事项与验收](next/ADDP%20Workbench数据服务消费与数据应用专题.md)汇总[延期能力](next/ADDP%20Workbench数据服务消费与数据应用专题.md#一延期能力)、[Power Query Connector 待实施设计](next/ADDP%20Workbench数据服务消费与数据应用专题.md#四power-query-connector-待实施设计)和[历史验收及覆盖边界](next/ADDP%20Workbench数据服务消费与数据应用专题.md#二验收与证据边界)。
 - [数据质量规范](spec/addp数据质量规范.md)
 - [数据血缘能力规范](spec/addp数据血缘能力规范.md)
-- [算子中间成果与血缘待办](next/算子中间成果与血缘待办.md)：现有资源来源追溯、内存结果边界及待讨论的算子加工过程展示；暂不实施血缘扩展。
+- [算子中间成果与血缘待办](next/算子中间成果与血缘待办.md)：单次执行只读加工过程已验收，实际端口贡献和中间结果摘要待确认。
 - [资源回收（Cleanup）体系规范](spec/addp-cleanup体系规范.md)
 - [数据类型与文件格式扩展指南](spec/addp数据类型与文件格式扩展指南.md)
 - [数据项探测器规范](spec/addp数据项探测器规范.md)
