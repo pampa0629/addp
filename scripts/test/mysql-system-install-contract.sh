@@ -209,6 +209,13 @@ done
         -run '^TestNotebookSessionAuthorizationServiceAgainstMySQL$' -count=1 -v
 ) | tee "$work/notebook-session-authorization.log"
 grep -q '^--- PASS: TestNotebookSessionAuthorizationServiceAgainstMySQL ' "$work/notebook-session-authorization.log"
+(
+    cd "$(dirname "$0")/../../system/backend"
+    unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+    ADDP_TEST_MYSQL_TENANT_SERVICE_ACCOUNT=1 GOWORK=off go test ./internal/iam \
+        -run '^TestTenantServiceAccountServiceAgainstMySQL$' -count=1 -v
+) | tee "$work/tenant-service-account.log"
+grep -q '^--- PASS: TestTenantServiceAccountServiceAgainstMySQL ' "$work/tenant-service-account.log"
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
 test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
