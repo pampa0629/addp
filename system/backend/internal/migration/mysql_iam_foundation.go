@@ -120,7 +120,13 @@ func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 }
 
 const mysqlExecutionAuthorizationOwner = "system_execution_authorization"
-const mysqlExecutionAuthorizationVersion = 1
+const mysqlExecutionAuthorizationVersion = 2
+
+//go:embed mysql_execution_authorization_update_v1.sql
+var executionAuthorizationUpdateV1 string
+
+//go:embed mysql_execution_authorization_scope.sql
+var executionAuthorizationScope string
 
 // MigrateMySQLExecutionAuthorization installs the general execution grants after the IAM and engine tables.
 func MigrateMySQLExecutionAuthorization(db *gorm.DB) error {
@@ -175,6 +181,9 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 				return err
 			}
 		}
+		if owner == mysqlExecutionAuthorizationOwner {
+			return installExecutionAuthorizationScope(conn, triggers)
+		}
 		if owner == mysqlSourceGrantCatalogOwner {
 			oldPosition := len(triggers)
 			identity, err := template.New("source item identity").Parse(mysqlSourceIdentitySQL)
@@ -227,4 +236,37 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 		}
 		return schema.CheckMySQLTriggers(conn, triggers)
 	}, data)
+}
+
+// Keep the v1 guards in force until all new triggers have been verified.
+// The final ALTER replaces both checks atomically, including on a resumed deployment.
+func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error {
+	var old bool
+	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='execution_authorization_validate_update')").Row().Scan(&old); err != nil {
+		return err
+	}
+	if old {
+		if err := schema.CheckMySQLTriggers(conn, append([]string{executionAuthorizationUpdateV1}, triggers...)); err != nil {
+			return err
+		}
+		const retire = "DROP TRIGGER execution_authorization_validate_update"
+		if err := conn.Exec(retire).Error; err != nil {
+			var denied *mysqlDriver.MySQLError
+			if errors.As(err, &denied) && denied.Number == 1419 {
+				return &schema.PendingMySQLTriggers{Statements: []string{retire}}
+			}
+			return err
+		}
+	}
+	if err := schema.CheckMySQLTriggers(conn, triggers); err != nil {
+		return err
+	}
+	var installed bool
+	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='execution_authorizations' AND constraint_name='ck_execution_authorization_scope_v2')").Row().Scan(&installed); err != nil {
+		return err
+	}
+	if installed {
+		return nil
+	}
+	return conn.Exec(executionAuthorizationScope).Error
 }
