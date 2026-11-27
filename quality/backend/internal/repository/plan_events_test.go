@@ -53,9 +53,17 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 	repo := NewPlanRepository(db)
 	plan := createPlanRepositoryTestTask(t, db, tenantID)
 	ctx := t.Context()
+	databaseNow := func(t *testing.T) time.Time {
+		t.Helper()
+		now, err := commonExecution.DatabaseNow(db.WithContext(ctx))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return now.Truncate(time.Microsecond)
+	}
 	for _, status := range []string{"success", "failed", "timeout", "cancelled"} {
 		t.Run(status, func(t *testing.T) {
-			now := time.Now().UTC()
+			now := databaseNow(t)
 			item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
 			item.ExecutionConfig = commonModels.JSONMap{"private": "quality-event-sensitive-sentinel"}
 			if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
@@ -181,7 +189,7 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 		})
 	}
 	t.Run("retry_attempts", func(t *testing.T) {
-		now := time.Now().UTC().Truncate(time.Microsecond)
+		now := databaseNow(t)
 		item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
 		item.MaxAttempts = 2
 		if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
@@ -203,7 +211,7 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 		}
 		expire := func() {
 			t.Helper()
-			if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+			if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", databaseNow(t).Add(-time.Minute)).Error; err != nil {
 				t.Fatal(err)
 			}
 			if err := repo.RecoverExpiredExecutions(ctx); err != nil {
@@ -249,7 +257,7 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 		}
 	})
 	t.Run("recovered_pending_failure", func(t *testing.T) {
-		now := time.Now().UTC().Truncate(time.Microsecond)
+		now := databaseNow(t)
 		item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
 		item.MaxAttempts = 2
 		if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {

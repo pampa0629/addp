@@ -52,6 +52,9 @@ func TestInstalledQualityStorage(t *testing.T) {
 	t.Run("multi-column assertion evidence", func(t *testing.T) {
 		exerciseAssertionIssueEvidence(t, db, 19)
 	})
+	t.Run("concurrent pending claim", func(t *testing.T) {
+		exerciseQualityConcurrentPendingClaim(t, db, 20)
+	})
 	checkQualityOverview(t, db)
 	t.Run("duplicate plan target is excluded while active", func(t *testing.T) {
 		const tenant = 18

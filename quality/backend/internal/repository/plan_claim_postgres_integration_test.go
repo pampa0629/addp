@@ -11,6 +11,7 @@ import (
 	commonExecution "github.com/addp/common/execution"
 	qualityMigration "github.com/addp/quality/internal/migration"
 	"github.com/addp/quality/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -23,6 +24,11 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open PostgreSQL: %v", err)
 	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
 	if err := commonExecution.EnsureStore(db); err != nil {
 		t.Fatalf("ensure common execution store: %v", err)
 	}
@@ -35,48 +41,80 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&commonExecution.TaskExecution{}).Error
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.Issue{}).Error
 		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.QualityPlan{}).Error
-		_ = db.Where("tenant_id = ?", tenantID).Delete(&models.QualityPlan{}).Error
 	})
+	exerciseQualityConcurrentPendingClaim(t, db, tenantID)
+}
+
+func exerciseQualityConcurrentPendingClaim(t *testing.T, db *gorm.DB, tenantID int64) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Second)
+	defer cancel()
 	task := createPlanRepositoryTestTask(t, db, tenantID)
 	repo := NewPlanRepository(db)
 	createdAt := time.Now().UTC()
-	execution := newQualityRepositoryTestExecution(fmt.Sprintf("quality-pg-%d", tenantID), int(tenantID), createdAt)
-	if _, err := repo.CreateExecution(context.Background(), task.ID, tenantID, execution, models.PlanRunRequest{}); err != nil {
+	execution := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), createdAt)
+	if _, err := repo.CreateExecution(ctx, task.ID, tenantID, execution, models.PlanRunRequest{}); err != nil {
 		t.Fatalf("create pending execution: %v", err)
 	}
-	if err := repo.AttachPendingAuthorization(context.Background(), tenantID, execution.ExecutionID, qualityTestAuthorization(int64(1), createdAt.Add(time.Hour))); err != nil {
+	if err := repo.AttachPendingAuthorization(ctx, tenantID, execution.ExecutionID, qualityTestAuthorization(int64(1), createdAt.Add(time.Hour))); err != nil {
 		t.Fatalf("attach authorization: %v", err)
 	}
 	start := make(chan struct{})
+	ready := make(chan struct{}, 2)
 	type claimResult struct {
+		workerID  string
 		execution *commonExecution.TaskExecution
 		err       error
 	}
 	results := make(chan claimResult, 2)
 	for _, workerID := range []string{"worker-a", "worker-b"} {
-		workerID := workerID
 		go func() {
-			<-start
-			claimed, _, claimErr := repo.ClaimPendingExecution(context.Background(), workerID, 10*time.Minute)
-			results <- claimResult{execution: claimed, err: claimErr}
+			result := claimResult{workerID: workerID}
+			result.err = db.WithContext(ctx).Connection(func(conn *gorm.DB) error {
+				ready <- struct{}{}
+				select {
+				case <-start:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				var err error
+				result.execution, _, err = NewPlanRepository(conn).ClaimPendingExecution(ctx, workerID, 10*time.Minute)
+				return err
+			})
+			results <- result
 		}()
+	}
+	for range 2 {
+		select {
+		case <-ready:
+		case result := <-results:
+			t.Fatalf("worker %s could not reserve a database connection: %v", result.workerID, result.err)
+		case <-ctx.Done():
+			t.Fatal("timed out reserving two database connections")
+		}
 	}
 	close(start)
 
-	successes, empty := 0, 0
+	var winner claimResult
+	empty := 0
 	for range 2 {
-		result := <-results
-		if result.err != nil {
-			t.Fatalf("concurrent pending claim error: %v", result.err)
-		}
-		if result.execution != nil {
-			successes++
-		} else {
-			empty++
+		select {
+		case result := <-results:
+			if result.err != nil {
+				t.Fatalf("worker %s: concurrent pending claim: %v", result.workerID, result.err)
+			}
+			if result.execution == nil {
+				empty++
+				continue
+			}
+			winner = result
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for both claims")
 		}
 	}
-	if successes != 1 || empty != 1 {
-		t.Fatalf("pending claim results success=%d empty=%d, want 1/1", successes, empty)
+	if winner.execution == nil || empty != 1 || winner.execution.ExecutionID != execution.ExecutionID ||
+		winner.execution.LeaseOwner == nil || *winner.execution.LeaseOwner != winner.workerID || winner.execution.LeaseToken == nil {
+		t.Fatalf("expected one claim for execution %s and one empty result; empty=%d winner=%s", execution.ExecutionID, empty, winner.workerID)
 	}
 
 	var executions []commonExecution.TaskExecution
@@ -84,8 +122,16 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 		Find(&executions).Error; err != nil {
 		t.Fatalf("load claimed executions: %v", err)
 	}
-	if len(executions) != 1 || executions[0].Status != commonExecution.ExecutionStatusRunning || executions[0].StartedAt == nil {
-		t.Fatalf("claimed executions = %#v", executions)
+	if len(executions) != 1 {
+		t.Fatalf("execution count after claims=%d, want 1", len(executions))
+	}
+	stored := executions[0]
+	if stored.ExecutionID != execution.ExecutionID || stored.Status != commonExecution.ExecutionStatusRunning ||
+		stored.StartedAt == nil || stored.Attempt != 1 ||
+		stored.LeaseExpiresAt == nil || !stored.LeaseExpiresAt.After(*stored.StartedAt) ||
+		stored.LeaseOwner == nil || *stored.LeaseOwner != winner.workerID ||
+		stored.LeaseToken == nil || *stored.LeaseToken != *winner.execution.LeaseToken {
+		t.Fatalf("persisted execution %s does not have the winning worker's first active lease", stored.ExecutionID)
 	}
 	var storedTask models.QualityPlan
 	if err := db.First(&storedTask, task.ID).Error; err != nil {
@@ -94,7 +140,9 @@ func TestIntegrationPostgresQualityConcurrentPendingClaim(t *testing.T) {
 	if storedTask.LastExecutionID != executions[0].ExecutionID || storedTask.LastExecutionStatus != commonExecution.ExecutionStatusRunning {
 		t.Fatalf("started task summary = %s/%s", storedTask.LastExecutionID, storedTask.LastExecutionStatus)
 	}
-	assertQualityEventKinds(t, db, executions[0].ExecutionID, "started")
+	assertQualityEventKinds(t, db, stored.ExecutionID, "started")
+	t.Logf("execution=%s winner=%s attempt=%d empty_claims=%d started_events=1 summary=%s",
+		stored.ExecutionID, winner.workerID, stored.Attempt, empty, storedTask.LastExecutionStatus)
 }
 
 func TestIntegrationPostgresIssueConcurrentFirstObservation(t *testing.T) {
