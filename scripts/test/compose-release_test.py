@@ -33,7 +33,8 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         fixture = entry.read_text().split("<<'YAML'\n", 1)[1].split("\nYAML\n", 1)[0]
         env = dict(os.environ, ADDP_MYSQL_FIXTURE_PROJECT="hosted-infra-test", ADDP_DEPLOYMENT_NETWORK="hosted-net",
                    MYSQL_FIXTURE_IMAGE="mysql:8.0", MYSQL_ROOT_PASSWORD="fixture", REDIS_PASSWORD="fixture",
-                   MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture", GITHUB_WORKSPACE=str(ROOT))
+                   MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture", INFRA_FALKORDB_PASSWORD="fixture",
+                   GITHUB_WORKSPACE=str(ROOT))
         env.pop("COMPOSE_PROJECT_NAME", None)
         with tempfile.TemporaryDirectory() as directory:
             compose = Path(directory, "compose.yml")
@@ -49,6 +50,12 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             quality = json.loads(subprocess.check_output(
                 [*command, "--profile", "quality-worker", "config", "--format", "json"], env=env,
             ))
+            all_modules = json.loads(subprocess.check_output(
+                [*command, "--profile", "all-modules", "config", "--format", "json"], env=env,
+            ))
+            init = json.loads(subprocess.check_output(
+                [*command, "--profile", "all-modules", "--profile", "all-modules-init", "config", "--format", "json"], env=env,
+            ))["services"]["redpanda-init"]
         self.assertEqual(config["name"], "hosted-infra-test")
         self.assertEqual(config["networks"]["default"]["name"], "hosted-net")
         self.assertIn("minio", config["services"])
@@ -66,6 +73,14 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         self.assertFalse(runtime.get("ports"))
         self.assertFalse(runtime.get("volumes"))
         self.assertIn("meilisearch", manager["services"])
+        infra = all_modules["services"]
+        self.assertEqual(set(infra), {"mysql", "redis", "minio", "registry", "meilisearch", "manager-search-redis", "falkordb", "redpanda"})
+        for service in ("falkordb", "redpanda"):
+            self.assertFalse(infra[service].get("ports"))
+            self.assertNotIn("container_name", infra[service])
+            self.assertEqual(set(infra[service]["networks"]), {"default"})
+        init_script = next(mount["source"] for mount in init["volumes"] if mount["target"] == "/opt/addp/init-redpanda.sh")
+        self.assertEqual(Path(init_script), ROOT / "scripts/infra/init-redpanda.sh")
         source = manager["services"]["search-source"]
         self.assertEqual(source["environment"]["POSTGRES_DB"], "search_fixture")
         self.assertFalse(source.get("ports"))
@@ -86,6 +101,7 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         )
         env = dict(os.environ, **dict.fromkeys(keys, "fixture"))
         env.update(ADDP_INFRA_DATABASE_PROVIDER="mysql", ADDP_DEPLOYMENT_MODULES="quality,monitor", TZ="UTC",
+                   ADDP_MYSQL_ONLINE_SUITE="quality-worker",
                    NGINX_PORT="18080", REDIS_HOST="redis", REDIS_PORT="6379", ADDP_DATABASE_DEPLOY_PASSWORD="deploy-fixture-only")
         with tempfile.TemporaryDirectory() as work:
             path = Path(work, ".env")
@@ -134,7 +150,7 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker]", events)
+        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker, all-modules]", events)
         for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py", "mysql-develop-file-online.py",
                      "mysql-quality-worker-online.py"):
             probe = ROOT / "scripts/test" / name
@@ -436,11 +452,19 @@ class RuntimeSelectionTest(unittest.TestCase):
 
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
-        for provider, modules in (("mysql", ""), ("mysql", "workbench,inference,system,manager,orchestrator,monitor,standard,model,service,asset,portal,agent,copilot,catalog,graph,ontology,develop,quality,transfer"), ("postgres", "system,workbench,orchestrator,monitor,standard,model,service,asset,portal,agent,copilot,catalog,graph,ontology,develop,quality,transfer")):
+        entry = (ROOT / "scripts/test/compose-mysql-platform-online.sh").read_text()
+        selection = entry.split("export ADDP_DEPLOYMENT_SCOPE=", 1)[1].split("\nesac", 1)[0]
+        all_modules = subprocess.check_output(
+            ["bash", "-ec", 'export ADDP_DEPLOYMENT_SCOPE=' + selection + '\nesac\nprintf "%s" "$ADDP_DEPLOYMENT_MODULES"'],
+            env=dict(os.environ, ADDP_MYSQL_ONLINE_SUITE="all-modules"), text=True,
+        )
+        for provider, modules in (("mysql", ""), ("mysql", all_modules), ("postgres", "system,workbench,orchestrator,monitor,standard,model,service,asset,portal,agent,copilot,catalog,graph,ontology,develop,quality,transfer")):
             with self.subTest(provider=provider, modules=modules), tempfile.TemporaryDirectory() as temporary:
                 env = release.release_environment(dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway",
                     ADDP_DEPLOYMENT_NETWORK="test-net", ADDP_DEPLOYMENT_PROJECT="test-scoped", NGINX_PORT="8080",
-                    ADDP_INFRA_DATABASE_PROVIDER=provider, ADDP_DEPLOYMENT_MODULES=modules),
+                    ADDP_INFRA_DATABASE_PROVIDER=provider, ADDP_DEPLOYMENT_MODULES=modules,
+                    ADDP_MYSQL_HOST="mysql", ADDP_MYSQL_PORT="3306", ADDP_DATABASE_RUNTIME_USER="platform_runtime",
+                    ADDP_DATABASE_RUNTIME_PASSWORD="fixture", POSTGRES_HOST="unavailable.invalid", TZ="UTC"),
                     "fixture", "registry.invalid", "linux/amd64")
                 model = release.compose_model("platform", env)
                 expected = base | {f"{m}-{part}" for m in modules.split(",") if m for part in ("backend", "frontend")}
@@ -449,7 +473,34 @@ class RuntimeSelectionTest(unittest.TestCase):
                     expected.add("quality-worker")
                 if "transfer" in modules.split(","):
                     expected.update({"transfer-bounded-worker","transfer-continuous-worker"})
+                if "security" in modules.split(","):
+                    expected.add("security-worker")
                 self.assertEqual(set(model), expected)
+                if modules == all_modules:
+                    full_env = release.release_environment(dict(env, ADDP_DEPLOYMENT_SCOPE="full", ADDP_DEPLOYMENT_MODULES="",
+                                                                 ADDP_INFRA_DATABASE_PROVIDER="postgres"),
+                                                           "fixture", "registry.invalid", "linux/amd64")
+                    self.assertEqual(set(model), set(release.compose_model("platform", full_env)))
+                    schemas = subprocess.check_output(["bash", "-ec", """
+source scripts/infra/platform-database.sh
+collect_database_schema() { printf '%s\n' "$1"; }
+printf 'system\ncommon\n'
+addp_prepare_selected_databases collect_database_schema "$1"
+""", "_", "\n".join(model)], cwd=ROOT, text=True).splitlines()
+                    expected_schemas = (set(all_modules.split(",")) | {"common", "meta", "gateway"}) - {"portal"}
+                    self.assertCountEqual(schemas, expected_schemas)
+                    installed_services = {"gateway" if schema == "gateway" else f"{schema}-backend"
+                                          for schema in schemas if schema != "common"}
+                    worker_services = {name for name in model if name.endswith("-worker")}
+                    db_services = {name for name, service in model.items()
+                                   if "ADDP_INFRA_DATABASE_PROVIDER" in service.get("environment", {})}
+                    self.assertEqual(db_services, installed_services | worker_services)
+                    for name in db_services:
+                        runtime = model[name]["environment"]
+                        self.assertEqual(runtime["ADDP_INFRA_DATABASE_PROVIDER"], "mysql", name)
+                        self.assertEqual((runtime["ADDP_MYSQL_HOST"], runtime["ADDP_MYSQL_PORT"]), ("mysql", "3306"), name)
+                        self.assertEqual(runtime["POSTGRES_HOST"], "unavailable.invalid", name)
+                        self.assertFalse(any(key.startswith("ADDP_DATABASE_DEPLOY_") for key in runtime), name)
                 for owner in {"orchestrator", "monitor", "standard", "model", "service", "asset", "agent", "copilot", "catalog", "graph", "ontology", "develop", "quality", "transfer"}.intersection(modules.split(",")):
                     runtime = model[f"{owner}-backend"]["environment"]
                     self.assertEqual(runtime["ADDP_INFRA_DATABASE_PROVIDER"], provider)
@@ -468,6 +519,37 @@ class RuntimeSelectionTest(unittest.TestCase):
         for scope, modules in (("full", "workbench"), ("system-meta-gateway", "unknown")):
             with self.assertRaisesRegex(ValueError, "ADDP_DEPLOYMENT_MODULES"):
                 release.selection({"ADDP_DEPLOYMENT_SCOPE": scope, "ADDP_DEPLOYMENT_MODULES": modules})
+
+    def test_scoped_release_keeps_python_images_out_of_go_compilation(self):
+        registry, version, platform = "registry.invalid", "fixture", "linux/amd64"
+        env = dict(os.environ, ADDP_DEPLOYMENT_SCOPE="system-meta-gateway", ADDP_DEPLOYMENT_NETWORK="fixture-net",
+                   ADDP_DEPLOYMENT_PROJECT="fixture", ADDP_INFRA_DATABASE_PROVIDER="mysql", NGINX_PORT="18080",
+                   ADDP_DEPLOYMENT_MODULES="agent,copilot,quality,security")
+        platform_model = release.compose_model("platform", release.release_environment(env, version, registry, platform))
+        output = release.output
+
+        def output_for_fixture(arguments, env=None):
+            if arguments == ["git", "rev-parse", "HEAD"]:
+                return "b" * 40
+            return output(arguments, env)
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, env), \
+                patch.object(release, "ROOT", Path(directory)), patch.object(release, "native_platform", return_value=platform), \
+                patch.object(release, "subprocess", wraps=subprocess) as process, \
+                patch.object(release, "output", side_effect=output_for_fixture), \
+                patch.object(release, "compose_model", side_effect=lambda project, *_: platform_model if project == "platform" else {}), \
+                patch.object(release, "execute", side_effect=[None, RuntimeError("image build reached")]) as execute:
+            (Path(directory) / "scripts").symlink_to(ROOT / "scripts", target_is_directory=True)
+            process.run.return_value = subprocess.CompletedProcess(["git", "diff", "--quiet", "HEAD"], 0)
+            with self.assertRaisesRegex(RuntimeError, "image build reached"):
+                release.prepare(version, registry)
+        compile_command, image_command = [call.args[0] for call in execute.call_args_list]
+        compile_services = compile_command[-1].removeprefix("BUILD_ARGS=--services ").split(",")
+        image_args = shlex.split(image_command[-1].removeprefix("IMAGE_BUILD_ARGS="))
+        image_services = image_args[image_args.index("--services") + 1].split(",")
+        self.assertTrue({"quality-worker", "security-worker"} <= set(compile_services))
+        self.assertFalse({"agent-backend", "copilot-backend"} & set(compile_services))
+        self.assertCountEqual(image_services, platform_model)
 
     def test_amd64_release_explicitly_excludes_supermap(self):
         model, _ = self.runtime_model("false")
