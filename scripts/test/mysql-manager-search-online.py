@@ -33,6 +33,7 @@ def run(work, artifacts):
     }).payload
     assert login["next_action"] == "session_issued"
     operator = client(origin, login["session"]["access_token"], 15)
+    operator_id = None
 
     for actor, roles in ((reader, {"tenant.data_steward"}), (operator, OPERATOR_ROLES)):
         identity = actor.request("GET", "/api/v1/system/auth/context", (200,)).payload
@@ -41,9 +42,12 @@ def run(work, artifacts):
         assert {role["role_key"] for role in identity["authorization"]["role_assignments"]} == roles
         principal = int(identity["principal"]["id"])
         assert (principal == facts["principal_id"]) == (actor is reader)
+        if actor is operator:
+            operator_id = principal
 
     evidence = {"platform_provider": "mysql", "source_provider": "postgresql",
-                "tenant_id": facts["tenant_id"], "reader_principal_id": facts["principal_id"]}
+                "tenant_id": facts["tenant_id"], "reader_principal_id": facts["principal_id"],
+                "operator_principal_id": operator_id}
 
     def record(**observations):
         evidence.update(observations)
@@ -82,7 +86,9 @@ def run(work, artifacts):
         response = operator.request("POST", f"{endpoint}/{grant_id}/revoke", (200,) if confirmed else (200, 404),
                                     {"reason": "Hosted Manager exact search revocation"})
         if response.status == 200:
-            assert response.payload["request_id"] == grant_id and response.payload["revocation"]
+            receipt = response.payload
+            assert receipt["request_id"] == grant_id and receipt["revoked_request_ids"] == [grant_id]
+            assert int(receipt["revoked_by_principal_id"]) == operator_id and receipt["revoked_at"]
         del grants[doc]
 
     def search(page_size, cursor=None, expected=200):
