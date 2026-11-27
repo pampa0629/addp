@@ -18,6 +18,7 @@ func TestBusinessCatalogNodeScopes(t *testing.T) {
 	}{
 		{"mongodb", "database", "collection", []string{"analytics"}},
 		{"tidb", "database", "table", []string{"a.b"}},
+		{"oceanbase", "database", "table", []string{"a.b"}},
 		{"gaussdb", "schema", "table", []string{"a.b"}},
 		{"highgo", "schema", "table", []string{"a.b"}},
 		{"ftp", "directory", "file", []string{"reports", "2026"}},

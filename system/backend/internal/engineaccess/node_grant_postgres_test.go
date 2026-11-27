@@ -125,7 +125,9 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		if err != nil {
 			t.Fatal(err)
 		}
+		read("read", current, true)
 		read("read", future, true)
+		read("read", sibling, false)
 		if _, err := service.RevokeGrant(ctx, RevokeGrantInput{Actor: actor, EngineID: int64(base.EngineID), RequestID: readGrant.RequestID, Reason: "Withdraw only read scope"}); err != nil {
 			t.Fatal(err)
 		}
@@ -279,7 +281,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 	for _, kind := range []string{"gaussdb", "highgo"} {
 		t.Run(kind+" catalog node grant", func(t *testing.T) { namespaceScope(t, kind, "schema") })
 	}
-	for _, kind := range []string{"mysql", "tidb", "mongodb"} {
+	for _, kind := range []string{"mysql", "tidb", "oceanbase", "mongodb"} {
 		t.Run(kind+" database node grant", func(t *testing.T) { namespaceScope(t, kind, "database") })
 	}
 	directoryScope := func(t *testing.T, kind string) {

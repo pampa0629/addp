@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/authorization"
+	"github.com/addp/common/dataitem/authorizationfacts"
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
 )
@@ -352,13 +354,18 @@ func TestIntegrationOceanBaseCatalogAndRead(t *testing.T) {
 		t.Fatalf("database %q not found in %#v", databaseName, oceanBaseCatalogEntryNames(databases))
 	}
 
+	if !authorizationfacts.NodeIdentityMatchesEngine(p.Type(), businessDatabase.Path) {
+		t.Fatalf("native database cannot be used as a node Grant: %+v", businessDatabase.Path)
+	}
+	scope := authorization.SourceNodeScope{Target: businessDatabase.Path}
+
 	items, err := p.ListChildren(ctx, connInfo, businessDatabase.Path, plugin.ListOptions{})
 	if err != nil {
 		t.Fatalf("ListChildren(database) error = %v", err)
 	}
 	for _, tableName := range []string{probeTable, customersTable, ordersTable} {
 		entry := findOceanBaseCatalogEntry(items, tableName)
-		if entry == nil || entry.Kind != plugin.EngineCatalogKindTable {
+		if entry == nil || entry.Kind != plugin.EngineCatalogKindTable || !scope.Covers(entry.Path) {
 			t.Fatalf("%s table not found in %#v", tableName, oceanBaseCatalogEntryNames(items))
 		}
 	}

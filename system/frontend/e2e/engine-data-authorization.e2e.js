@@ -59,7 +59,7 @@ test('all records state filter applies before pagination and survives current vi
 })
 async function fixture(page, { allowed = permissions, conflict = false, denied = false, identityRows = null, grantFailure = false, grantDuplicate = false, secondTable = false, history = [], memberStatus = 'active', identityFailure = false, language = 'zh-cn', inspectionReason = 'grant', inspectionDenied = false, organizationMember = false, factsState = 'complete', ftp = '', sourceType = 'ftp', factsTarget = null, metadataOnly = false, wholeMetadata = false,
   collection = false, factsHash = 'b'.repeat(64), grantBasisConflict = false } = {}) {
-  const namespaceTerm = (collection || ['mysql','tidb','mongodb'].includes(sourceType)) ? 'database' : 'schema'
+  const namespaceTerm = (collection || ['mysql','tidb','oceanbase','mongodb'].includes(sourceType)) ? 'database' : 'schema'
   const schemaPath = { ...rootPath, segments: [...rootPath.segments, { term: namespaceTerm, kind: 'namespace', name: collection ? 'Outdoor' : 'outdoor' }] }
   const tablePath = { ...rootPath, segments: [...schemaPath.segments, { term: 'table', kind: 'table', name: 'activities' }] }
   const objectSource = ['minio','rustfs'].includes(sourceType)
@@ -195,7 +195,7 @@ async function fixture(page, { allowed = permissions, conflict = false, denied =
       }).map(({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }) => ({ engine_id, item_fingerprint, name, full_name, item_type, ancestors }))
       return reply({ data: data.slice((page-1)*size,page*size), total:data.length,page,page_size:size,total_pages:Math.ceil(data.length/size) })
     }
-    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : ['gaussdb','highgo','mysql','tidb','mongodb'].includes(sourceType) ? sourceType : 'postgresql', node_grant_root: ftp ? modelRoot : rootPath, engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
+    const engine = { id: '2', name: collection ? '授权验证 MongoDB' : '授权验证 PostgreSQL', engine_type: ftp ? sourceType : collection ? 'mongodb' : ['gaussdb','highgo','mysql','tidb','oceanbase','mongodb'].includes(sourceType) ? sourceType : 'postgresql', node_grant_root: ftp ? modelRoot : rootPath, engine_origin: 'general', lifecycle_state: 'active', connection_status: 'online', is_builtin: false, capabilities: { schema_version: 'engine.capabilities/v1', storage: {} } }
     if (path.endsWith('/engine-types')) return reply([])
     if (path.endsWith('/engines/2')) return reply(engine)
     if (path.endsWith('/engines')) return reply([engine])
@@ -1451,7 +1451,7 @@ test('new PG authorization requires an explicit action and freezes metadata acro
 })
 
 
-for(const [sourceType,term] of [['postgresql','schema'],['highgo','schema'],['mysql','database'],['tidb','database'],['mongodb','database']]) for(const recursive of [false,true]) test(`persistent ${sourceType} ${term} scope is explicit, recursive=${recursive} and never reads item identities`,async({page})=>{
+for(const [sourceType,term] of [['postgresql','schema'],['highgo','schema'],['mysql','database'],['tidb','database'],['oceanbase','database'],['mongodb','database']]) for(const recursive of [false,true]) test(`persistent ${sourceType} ${term} scope is explicit, recursive=${recursive} and never reads item identities`,async({page})=>{
  const {reads,writes}=await fixture(page,{allowed:grantPermissions,sourceType})
  await page.goto('/engines/2?tab=data-authorization')
  await openNewAuthorization(page)
@@ -1578,9 +1578,9 @@ for (const sourceType of ['postgresql','nfs','minio']) test(`${sourceType} engin
 })
 
 
-for (const [sourceType, root] of [['postgresql', rootPath], ['gaussdb', rootPath], ['highgo', rootPath], ['mysql', rootPath], ['tidb', rootPath], ['mongodb', rootPath], ['nfs', ftpRootPath], ['ftp', ftpRootPath], ['minio', minioRootPath], ['rustfs', minioRootPath]]) {
+for (const [sourceType, root] of [['postgresql', rootPath], ['gaussdb', rootPath], ['highgo', rootPath], ['mysql', rootPath], ['tidb', rootPath], ['oceanbase', rootPath], ['mongodb', rootPath], ['nfs', ftpRootPath], ['ftp', ftpRootPath], ['minio', minioRootPath], ['rustfs', minioRootPath]]) {
   for (const [action, label] of [['metadata_read','仅查看元数据'],['read','读取数据（含元数据）']]) test(`entire engine issues one recursive ${action} node Grant for ${sourceType}`, async ({ page }) => {
-    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: ['postgresql','gaussdb','highgo','mysql','tidb','mongodb'].includes(sourceType) ? '' : 'gpkg' })
+    const { reads, writes } = await fixture(page, { allowed: grantPermissions, sourceType, ftp: ['postgresql','gaussdb','highgo','mysql','tidb','oceanbase','mongodb'].includes(sourceType) ? '' : 'gpkg' })
     await page.goto('/engines/2?tab=data-authorization')
     await openNewAuthorization(page)
     await resourceOption(page.getByTestId('approval-resource-tree'), '授权验证 PostgreSQL').click()
