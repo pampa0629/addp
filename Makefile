@@ -1915,7 +1915,7 @@ test-graph-online-runner: test-execution-online-ci-runner ## 验证图保护和�
 test-execution-online-ci-syntax:
 	@node --check --input-type=module < console/frontend/e2e/online/cleanup-execution.spec.js
 
-test-execution-online-ci-runner: test-oceanbase-online-runner test-tidb-online-runner test-execution-online-ci-syntax test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner test-raster-focal-neighborhood-preparation test-raster-disk-pressure-preparation ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
+test-execution-online-ci-runner: test-execution-online-ci-syntax test-oceanbase-online-runner test-tidb-online-runner test-redis-core-online-runner test-notebook-storage-online-runner test-infra-object-online-runner test-monitor-traces-local-runner test-cleanup-native-online-runner test-online-dispatcher-unit test-online-registration-unit test-manager-tiff-metadata-grant-runner test-raster-focal-neighborhood-preparation test-raster-disk-pressure-preparation ## 验证 Graph/Cleanup 编排、前置、报告、恢复和登记，不启动 Hosted
 	@bash -n scripts/test/online-hosted-security-gate.sh
 	@python3 -m unittest scripts/test/online-hosted-security-gate_test.py scripts/test/online-preflight_test.py \
 		scripts.test.online-hosted-opengauss-gate_test.OnlineHostedOpenGaussGateTest.test_native_targets_follow_the_product_registry_and_isolate_installer_credentials \
