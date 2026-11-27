@@ -133,7 +133,7 @@ class GaussDBConsumerTest(unittest.TestCase):
         self.assertNotIn('restart.sh',hosted)
 
     def test_public_structure_excludes_statistics_without_weakening_protected_count(self):
-        for profile in FLOW.PROFILES.values():
+        for profile in (FLOW.PROFILES['gaussdb'], FLOW.PROFILES['starrocks']):
             fields={
                 'id':dict(name='id',type='bigint',primary_key=True),
                 'name':dict(name='name',type='string',primary_key=True),
@@ -208,7 +208,7 @@ class GaussDBConsumerTest(unittest.TestCase):
                     self.assertEqual((root/'gaussdb-node-read.json').exists(), expected)
 
     def test_exact_preparation_scopes_and_private_intents_for_both_profiles(self):
-        for profile in FLOW.PROFILES.values():
+        for profile in (FLOW.PROFILES['gaussdb'], FLOW.PROFILES['starrocks']):
             for fail_after_intent in (False,True):
                 with tempfile.TemporaryDirectory() as temp:
                     root=Path(temp)
@@ -287,7 +287,7 @@ class GaussDBConsumerTest(unittest.TestCase):
         self.assertTrue(all(call.args[0]=='GET' for call in client.request.call_args_list))
 
     def test_consumer_uses_public_structure_protected_facts_and_metadata_only_denial(self):
-        for profile in FLOW.PROFILES.values():
+        for profile in (FLOW.PROFILES['gaussdb'], FLOW.PROFILES['starrocks']):
             fields={'id':dict(name='id',type='bigint',primary_key=True),'name':dict(name='name',type='string',primary_key=True),
                     'amount':dict(name='amount',type='decimal',precision=38,scale=18),'optional_text':dict(name='optional_text',type='string')}
             source=dict(id=3,node_id=2,item_type='table',full_name=profile.namespace+'.source',fingerprint='test',attributes={

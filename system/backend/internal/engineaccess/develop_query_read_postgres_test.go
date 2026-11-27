@@ -242,7 +242,7 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 		if metaCalls != before {
 			t.Fatal("proven empty source enumerated Meta")
 		}
-		for _, engineType := range []string{"mysql", "tidb", "oceanbase", "starrocks"} {
+		for _, engineType := range []string{"mysql", "tidb", "oceanbase", "starrocks", "doris"} {
 			t.Run(engineType+" database paths and current Grants", func(t *testing.T) {
 				tenantID := uint(tenant)
 				nativeEngine := models.Engine{Name: "Develop " + engineType + " source authorization fixture", EngineType: engineType, TenantID: &tenantID, Version: 1, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"develop-` + engineType + `-grant.invalid","database":"fixture"}`)}

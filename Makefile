@@ -558,7 +558,7 @@ test-common-starrocks: ## 独占官方 StarRocks 验证原生目录、精度及�
 test-starrocks-online-runner: test-online-dispatcher-unit test-online-registration-unit ## 验证 StarRocks 只读页面验收、原生边界及 Hosted 隔离清理
 	@python3 -m unittest scripts/test/starrocks-consumer-flow-online_test.py scripts/test/online-hosted-starrocks-gate_test.py
 	@node --check console/frontend/e2e/online/readonly-sql-consumer-flow.spec.js
-	@bash -n scripts/test/online-hosted-starrocks-gate.sh
+	@bash -n scripts/test/online-hosted-analytic-sql-gate.sh
 	@cd system/backend && GOWORK=off go test ./cmd/online-test-fixture
 
 .PHONY: test-common-gaussdb test-common-gaussdb-unit

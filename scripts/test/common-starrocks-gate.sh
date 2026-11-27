@@ -46,7 +46,7 @@ from importlib import import_module
 fixture = import_module('business.starrocks.admission')
 flow = import_module('scripts.test.readonly-sql-consumer-flow-online')
 audit = fixture.read_business_audit()
-if not flow.starrocks_business_selects('', audit):
+if not flow.audit_business_selects('', audit):
     raise SystemExit('native StarRocks audit did not record the disposable reader business SELECT')
 print('STARROCKS_NATIVE_BUSINESS_AUDIT_PASS')
 AUDIT

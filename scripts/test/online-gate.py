@@ -858,6 +858,10 @@ SUITES: Mapping[str, Suite] = {
         command=(sys.executable, "-m", "scripts.test.readonly-sql-consumer-flow-online", "--engine-type", "starrocks"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL"), ("develop", "DEVELOP_URL")),
     ),
+    "doris-consumer-flow": Suite(
+        command=(sys.executable, "-m", "scripts.test.readonly-sql-consumer-flow-online", "--engine-type", "doris"),
+        services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"), ("meta", "META_URL"), ("manager", "MANAGER_URL"), ("security", "SECURITY_URL"), ("develop", "DEVELOP_URL")),
+    ),
     "gaussdb-consumer-flow": Suite(
         command=(sys.executable, "-m", "scripts.test.readonly-sql-consumer-flow-online", "--engine-type", "gaussdb"),
         services=(("gateway", "GATEWAY_URL"), ("system", "SYSTEM_URL"),

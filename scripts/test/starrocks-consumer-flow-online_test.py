@@ -82,12 +82,12 @@ class StarRocksConsumerTest(unittest.TestCase):
         incidental = metadata + "|Stmt=SELECT table_name FROM information_schema.tables"
         outsider = ordinary.replace("business_reader", "root")
         after = before + "\n" + "\n".join((incidental, outsider, ordinary))
-        self.assertEqual(FLOW.starrocks_business_selects(before, after), ["fixture-id"])
-        self.assertEqual(FLOW.starrocks_business_selects(after, after), [])
+        self.assertEqual(FLOW.audit_business_selects(before, after), ["fixture-id"])
+        self.assertEqual(FLOW.audit_business_selects(after, after), [])
         with self.assertRaises(FLOW.API.SuiteError):
-            FLOW.starrocks_business_selects(before, ordinary)
+            FLOW.audit_business_selects(before, ordinary)
         with self.assertRaises(FLOW.API.SuiteError):
-            FLOW.starrocks_business_selects(before, after.replace("|QueryId=fixture-id", ""))
+            FLOW.audit_business_selects(before, after.replace("|QueryId=fixture-id", ""))
 
     def test_one_shared_consumer_and_browser_implementation(self):
         root = Path(__file__).resolve().parents[2]

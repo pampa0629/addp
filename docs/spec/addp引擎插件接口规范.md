@@ -678,6 +678,7 @@ Provider 对视图、函数、外部表、临时对象遮蔽、继承／分区�
 
 - **OceanBase MySQL 模式。** 普通只读账号在同一事务核对 SQL 模式、默认库和每张实际业务基表，再按完整 ReadSet 核权、执行。DBA 将改名、同名重建及表与视图互换安排在相关工作台查询结束后。此范围以源库变更窗口维持对象身份，零行探测用于核对表，不承担元数据锁语义。
 - **StarRocks 3.5.21。** Develop 原生只读查询只接受 `default_catalog` 内部普通表。在同一专用只读连接核对当前 Catalog、默认库、SQL 模式及完整 ReadSet，经 System 逐表核权后执行原生语句。对象身份依赖 DBA 将改名、同名重建和表视图互换与工作台查询错峰。此路径使用单语句只读边界。
+- **Doris 2.1.0。** Develop 在同一连接核对 `internal` Catalog、默认库、SQL 模式及全部业务基表。Doris 目录以 `BASE TABLE` 和 `ENGINE=Doris` 标识内部 OLAP 表。通过 System 逐表核权后按单语句只读边界执行，表改名、同名重建和表视图互换安排在 DBA 变更窗口。
 
 PostgreSQL 的普通表查询按实际业务表核权，支持带扩展类型列的直接投影和全列读取。Provider 在原生目录确认函数归属后，允许用 PostGIS 的 `ST_AsText(geometry)` 将预览字段转换为 WKT，也允许对同一几何值执行 `ST_SRID(ST_Transform(geometry, target_srid))`，并以既有独立 JOIN 来源核验和撤权检查约束实际读取。
 

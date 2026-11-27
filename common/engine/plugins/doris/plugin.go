@@ -2,6 +2,7 @@ package doris
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/addp/common/datatype"
@@ -136,11 +137,39 @@ func (p *DorisPlugin) QueryLanguages() []string {
 }
 
 func (p *DorisPlugin) GenerateSampleQuery(ctx context.Context, connInfo plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
-	return plugin.SampleSQLForDialectCatalogPath(p.SQLDialect(), opts.Path, 10), "sql"
+	return p.queryProvenance().GenerateSampleQuery(ctx, connInfo, opts.Path, p.SQLDialect(), 10), "sql"
 }
 
 func (p *DorisPlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
+	provenance := p.queryProvenance()
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, provenance.ResolveReadSet, provenance.ResolveOutputLineage)
+}
+
+func (p *DorisPlugin) queryProvenance() shared.MySQLCompatibleQueryProvenance {
+	return shared.MySQLCompatibleQueryProvenance{
+		EngineName: p.DisplayName(), DefaultPort: p.DefaultPort(), CatalogModel: p.EngineCatalogModel(),
+		BuildDSN: p.BuildDSN, IsSystemNamespace: p.isSystemSchema, DescribeFacts: p.DescribeEngineCatalogFacts,
+		TableEngine: "Doris",
+	}
+}
+
+var _ plugin.GuardedQueryReadSessionProvider = (*DorisPlugin)(nil)
+
+func (p *DorisPlugin) OpenGuardedQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery, authorize plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
+	return shared.OpenGuardedMySQLCompatibleStatementReadSession(
+		ctx, p, p.BuildDSN, plugin.SQLResultFieldMapper(dorisCatalogFieldType), prepared, authorize, p.resolveSessionSources,
+	)
+}
+
+func (p *DorisPlugin) resolveSessionSources(ctx context.Context, conn *sql.Conn, request plugin.QueryRequest) (*plugin.QueryReadSet, error) {
+	var catalog string
+	if err := conn.QueryRowContext(ctx, "SELECT CURRENT_CATALOG()").Scan(&catalog); err != nil {
+		return nil, fmt.Errorf("%w: read Doris execution catalog: %w", plugin.ErrQueryReadSetUnresolved, err)
+	}
+	if catalog != "internal" {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return p.queryProvenance().ResolveSessionReadSet(ctx, conn, request)
 }
 
 func (p *DorisPlugin) SQLDialect() string {
@@ -152,14 +181,12 @@ func (p *DorisPlugin) SupportsParameterizedQueries() bool {
 }
 
 func (p *DorisPlugin) ControlledReadOnlySQLBoundary() plugin.ControlledReadOnlySQLBoundary {
-	return plugin.ControlledReadOnlySQLBoundaryDatabaseTransaction
+	return plugin.ControlledReadOnlySQLBoundaryValidatedStatement
 }
 
 func (p *DorisPlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
 	if opts.ReadOnly {
-		if err := commonquery.RequireReadOnly(sql); err != nil {
-			return nil, fmt.Errorf("Doris 只读查询校验失败：%w", err)
-		}
+		return plugin.ExecuteSingleStatementReadOnlySQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(dorisCatalogFieldType))
 	}
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(dorisCatalogFieldType))
 }

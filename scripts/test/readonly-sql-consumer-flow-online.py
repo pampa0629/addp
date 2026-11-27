@@ -33,6 +33,7 @@ class ConsumerProfile:
     catalog_tables: tuple[str, ...]
 
 PROFILES = {
+    'doris': ConsumerProfile('doris', 'business', 'database', ('id','optional_text'), '', '', 'CHAR(128)', ('source','customers')),
     'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', 'schema', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT', ('source',)),
     'starrocks': ConsumerProfile('starrocks', 'business', 'database', ('name','id','amount','optional_text'), '正式接入中文', '', 'CHAR(128)', ('source','customers','products','orders')),
 }
@@ -44,6 +45,8 @@ def require(ok,message):
 
 
 def private_directory(profile):
+    if profile.engine_type == 'doris':
+        return Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR'))
     fixture = import_module('business.scripts.online-gaussdb-consumer-fixture' if profile.engine_type == 'gaussdb' else 'business.starrocks.admission')
     return fixture.directory()
 
@@ -351,13 +354,13 @@ def verify_gaussdb_revoked_execution(client, tenant, engine, directory):
     (directory / 'gaussdb-revoked-execution.json').write_text(json.dumps(evidence))
 
 
-STARROCKS_READ = "SELECT optional_text FROM business.source WHERE id = 2"
+ANALYTIC_SQL_READ = "SELECT optional_text FROM business.source WHERE id = 2"
 STARROCKS_JOIN = ("SELECT a.name FROM business.source a "
                   "JOIN business.customers b ON a.id = b.customer_id")
 
 
-def starrocks_business_selects(before, after):
-    require(after.startswith(before), 'StarRocks FE audit window was replaced or rotated')
+def audit_business_selects(before, after):
+    require(after.startswith(before), 'FE audit window was replaced or rotated')
     ids = []
     for line in after[len(before):].splitlines():
         metadata, separator, statement = line.partition('|Stmt=')
@@ -368,43 +371,50 @@ def starrocks_business_selects(before, after):
                 r"\b(?:from|join)\s+(?:business\.)?(?:source|customers)\b", normalized):
             continue
         match = re.search(r"\|QueryId=([^|]+)", metadata)
-        require(match and match[1] not in ('', 'null', 'NaN'), 'missing native StarRocks query ID')
+        require(match and match[1] not in ('', 'null', 'NaN'), 'missing native FE query ID')
         ids.append(match[1])
     return ids
 
 
-def verify_starrocks_reads(client, tenant, engine, directory, revoked):
-    fixture = import_module('business.starrocks.admission')
+def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
+    if profile.engine_type == 'doris':
+        def read_audit():
+            return subprocess.check_output(
+                ['bash', 'scripts/test/common-doris-decimal-gate.sh', 'online-audit'], text=True, timeout=30)
+        join = "SELECT a.id FROM business.source a JOIN business.customers b ON a.id=b.id"
+    else:
+        read_audit = import_module('business.starrocks.admission').read_business_audit
+        join = STARROCKS_JOIN
     identity = API.validate_user_identity(client, tenant, PERMISSIONS)
     context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
     principal_id = str(context['principal']['id'])
     locator = f'addp://engine/{engine}/path/business/source?type=table'
-    evidence_path = directory / 'starrocks-develop-source-reads.json'
+    evidence_path = directory / f'{profile.engine_type}-develop-source-reads.json'
     if revoked:
         evidence = json.loads(evidence_path.read_text())
         require(evidence['engine_id'] == engine and evidence['identity'] == identity and
                 evidence['principal_id'] == principal_id and
                 set(evidence['checks']) == {'authorized', 'ungranted_join'},
-                'revocation check requires the original StarRocks consumer and successful test window')
-        cleanup = json.loads((directory / 'starrocks-grant-cleanup.json').read_text())
+                'revocation check requires the original consumer and successful test window')
+        cleanup = json.loads((directory / f'{profile.engine_type}-grant-cleanup.json').read_text())
         target = REGISTRATION.ExactRecordGrants.target(engine, 'business', 'source', 'table')
         require(not cleanup['failed_requests'] and any(row['engine'] == engine and
                 row['action'] == 'read' and row['target'] == target for row in cleanup['grants']),
                 'confirmed revocation of the fixture source required')
-        cases = [('revoked', STARROCKS_READ, False)]
+        cases = [('revoked', ANALYTIC_SQL_READ, False)]
     else:
         evidence = dict(identity=identity, principal_id=principal_id, engine_id=engine, checks={})
-        cases = [('authorized', STARROCKS_READ, True), ('ungranted_join', STARROCKS_JOIN, False)]
+        cases = [('authorized', ANALYTIC_SQL_READ, True), ('ungranted_join', join, False)]
     checks = evidence['checks']
     try:
         for phase, query, allowed in cases:
-            before = fixture.read_business_audit()
+            before = read_audit()
             result = sql_execution(client, engine, query, locator)
             execution_id = result['execution_id']
             require(execution_id not in {check['execution_id'] for check in checks.values()},
-                    'expected a new StarRocks execution ID')
-            after = fixture.read_business_audit()
-            ids = starrocks_business_selects(before, after)
+                    'expected a new Develop execution ID')
+            after = read_audit()
+            ids = audit_business_selects(before, after)
             details = result.get('error_details') or {}
             diagnostic = details.get('diagnostic') or {}
             checks[phase] = dict(execution_id=execution_id, status=result.get('status'),
@@ -415,11 +425,11 @@ def verify_starrocks_reads(client, tenant, engine, directory, revoked):
             if allowed:
                 summary = result.get('metadata', {}).get('result', {}).get('summary', {})
                 require(result.get('status') == 'success' and summary.get('preview_rows') == [{'optional_text': ''}],
-                        'authorized StarRocks query did not return the fixture row')
-                require(len(ids) == 1, 'expected exactly one StarRocks source business SELECT')
+                        'authorized query did not return the fixture row')
+                require(len(ids) == 1, 'expected exactly one source business SELECT')
             else:
                 assert_source_read_denied(result)
-                require(not ids, 'denied StarRocks execution emitted a business SELECT')
+                require(not ids, 'denied execution emitted a business SELECT')
     finally:
         evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
 
@@ -442,17 +452,21 @@ def main():
                     and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'isolated SQL consumer required')
             client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
             directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
-            if profile.engine_type == 'starrocks':
-                verify_starrocks_reads(client, tenant, engine, directory, revoked=True)
+            if profile.engine_type in ('starrocks', 'doris'):
+                verify_analytic_reads(profile, client, tenant, engine, directory, revoked=True)
             else:
                 verify_gaussdb_revoked_execution(client, tenant, engine, directory)
         return 0
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
-    report=run(client,tenant,engine,float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','900')),profile)
     directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
+    if profile.engine_type == 'doris':
+        verify_analytic_reads(profile, client, tenant, engine, directory, revoked=False)
+        print((directory / 'doris-develop-source-reads.json').read_text())
+        return 0
+    report=run(client,tenant,engine,float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','900')),profile)
     (directory / (profile.engine_type+'-consumer-flow.json')).write_text(json.dumps(report,ensure_ascii=False,indent=2))
     if profile.engine_type == 'starrocks':
-        verify_starrocks_reads(client, tenant, engine, directory, revoked=False)
+        verify_analytic_reads(profile, client, tenant, engine, directory, revoked=False)
     print(json.dumps(report,ensure_ascii=False,sort_keys=True))
     return 0
 

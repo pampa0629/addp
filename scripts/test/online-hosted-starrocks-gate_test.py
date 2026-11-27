@@ -12,7 +12,7 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
     """Reuse the existing disposable Hosted harness, with StarRocks-only wiring."""
     def setUp(self):
         super().setUp()
-        shutil.copyfile(ROOT/'scripts/test/online-hosted-starrocks-gate.sh',self.host.repository/'scripts/test/online-hosted-starrocks-gate.sh')
+        shutil.copyfile(ROOT/'scripts/test/online-hosted-analytic-sql-gate.sh',self.host.repository/'scripts/test/online-hosted-analytic-sql-gate.sh')
         self.host._write_repository_script('business/starrocks/admission.py','''
             import os,sys
             assert os.environ['ADDP_STARROCKS_ADMISSION_DIR']==os.environ['ADDP_ONLINE_SECRET_DIR']
@@ -37,6 +37,11 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
               [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
+        self.host._write_repository_script('scripts/test/common-doris-decimal-gate.sh', """
+            #!/usr/bin/env bash
+            echo "doris-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
+            [ "${ADDP_TEST_FIXTURE_FAIL:-}" != "$1" ]
+        """)
         self.host._write_repository_script('scripts/test/readonly-sql-consumer-flow-online.py', """
             import os,sys
             from pathlib import Path
@@ -58,7 +63,7 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
             'ADDP_ONLINE_HOST':'1','ADDP_ONLINE_HOSTED':'1','ONLINE_SUITE_INPUT':'starrocks-consumer-flow',
             'ADDP_ONLINE_ARTIFACT_DIR':str(self.host.artifacts),'ADDP_ONLINE_SECRET_DIR':str(self.host.secrets),
             'ADDP_TEST_GATE_TRACE':str(self.host.trace),'ADDP_TEST_BACKGROUND_PIDS':str(self.host.background_pids),**overrides}
-        return subprocess.run(['bash','scripts/test/online-hosted-starrocks-gate.sh']+(['--check-only'] if check else []),cwd=self.host.repository,env=environment,capture_output=True,text=True,timeout=20)
+        return subprocess.run(['bash','scripts/test/online-hosted-analytic-sql-gate.sh']+(['--check-only'] if check else []),cwd=self.host.repository,env=environment,capture_output=True,text=True,timeout=20)
 
     def test_success_registers_two_engines_and_checks_native_then_cleans_everything(self):
         # Override the inherited two-engine case: StarRocks admits only reads.
@@ -75,6 +80,28 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
         self.assertNotIn('start:-transfer',trace)
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
+
+    def test_doris_reuses_identity_revocation_and_cleanup(self):
+        for failure in ('', 'online-start'):
+            with self.subTest(failure=failure):
+                self.host.trace.unlink(missing_ok=True)
+                result = self.run_gate(ONLINE_SUITE_INPUT='doris-consumer-flow',
+                                       ADDP_TEST_FIXTURE_FAIL=failure)
+                trace = self.host.trace.read_text()
+                self.assertEqual(result.returncode == 0, not failure, result.stderr + result.stdout)
+                self.assertIn('doris-fixture:online-stop', trace)
+                self.assertIn('infra-down', trace)
+                self.assertFalse(self.host.secrets.exists())
+                self.assertNotIn('starrocks-fixture:', trace)
+                if failure:
+                    self.assertNotIn('register:', trace)
+                else:
+                    steps = ['doris-fixture:online-start', '--suite doris-consumer-flow',
+                             'register:doris-engine.json', 'readonly:prepare',
+                             'make:test-online ONLINE_SUITE=doris-consumer-flow',
+                             'readonly:cleanup', 'readonly:verify-revoked', 'doris-fixture:online-stop']
+                    self.assertEqual([trace.index(step) for step in steps],
+                                     sorted(trace.index(step) for step in steps))
 
     def test_failure_at_each_owned_stage_still_cleans_platform_and_fixture(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL':'start'},{'ADDP_TEST_FIXTURE_FAIL':'persistence'},{'ADDP_TEST_IDENTITY_FAIL':'1'},
