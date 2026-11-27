@@ -60,7 +60,7 @@ GitHub Environment `addp-online` 的 Repository Variable `ADDP_ONLINE_ENV_FILE` 
 | [企业目录发布](Online目录与治理.md#企业目录发布) | `enterprise-catalog-publishing` 同样使用该专用 User 的用户名和密码，并需预置永久 Domain 和 Department ID。 |
 | [Workbench 服务消费](Online引擎与消费.md#workbench-服务消费) | `workbench-service-consumption` 另需同 Tenant 专用 `ADDP_ONLINE_TEST_TENANT_ADMIN_ACCESS_TOKEN`、永久 `ADDP_ONLINE_WORKBENCH_MYSQL_ENGINE_ID`，以及端口、数据库、只读用户、只读密码和 root fixture 密码，其浏览器阶段仍使用非管理员专用 User 的用户名和密码。 |
 | [Transfer 仅新增写入](Online引擎与消费.md#transfer-仅新增写入) | `transfer-insert-only-mysql` 复用永久 PostgreSQL Engine Instance，另需永久 `ADDP_ONLINE_TRANSFER_MYSQL_ENGINE_ID`、名称、端口、数据库、可写用户、可写密码和仅供 Fixture 使用的 root 密码，浏览器使用同一专用 User 的用户名和密码。 |
-| [OceanBase 消费](Online引擎与消费.md#oceanbase-消费) | `oceanbase-consumer-flow` 另需永久 `ADDP_ONLINE_OCEANBASE_ENGINE_ID`，以及该实例对应的端口、database、租户限定用户和密码，专用 User 只需具备 Meta、Manager、Transfer、Develop 和 Service 所需最小权限，其中包括 `manager.data_item.read`；Engine 控制面状态由部署 profile 负责验证，业务 consumer 不需要 `system.engine.read`。 |
+| [OceanBase 消费](Online引擎与消费.md#oceanbase-消费) | Hosted Linux 创建当次平台租户、引擎、办理账号和普通账号。 |
 | [Transfer 保护](Online数据保护.md#transfer-固定夹具) | `security-transfer-protection` 另需永久 `ADDP_ONLINE_SECURITY_MONGODB_ENGINE_ID`、MongoDB 端口、数据库、只读账号，以及仅供 Fixture 使用的 root 账号。 |
 
 ## 模块实例运行日志验收

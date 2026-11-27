@@ -66,13 +66,11 @@ Host Gate 安装专用 Chromium；完整 API Key 不得进入报告或日志，A
 
 ### OceanBase 消费
 
-`oceanbase-consumer-flow` 的 macOS 环境字段沿[场景准备](Online编排与观测.md#按场景补充)，引擎模式、稳定键和消费断言沿[OceanBase 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#oceanbase)。参与 System、Gateway、Meta、Manager、Transfer、Develop 和 Service；`business/scripts/online-oceanbase-consumer-fixture.sh` 管理独立 OceanBase CE。
-
-专用环境预置永久 `engine_type=oceanbase` Engine Instance；Fixture 固定维护 5 行 InnoDB watermark 源表和同构空目标表。
+`oceanbase-consumer-flow`  使用一次性租户、引擎、办理账号及普通消费账号，运行条件与授权场景见[OceanBase 正式场景](../../docs/spec/testing/scenarios/关系型引擎消费验收.md#oceanbase)。
 
 suite 经 Gateway 和 Meta 获取正式 ResourceLocator，只创建一条 bounded watermark + upsert Transfer 任务，连续执行并精确断言 5 行首批、2 行增量和 0 行空增量；Manager 表预览、Develop SQL 与临时 Query Service 通过各自正式数据出口读取同一目标表，最终必须得到相同的 6 行 checksum，Manager 还校验扫描列顺序。
 
-任务和服务按捕获 ID 删除并确认 404，Fixture 在退出路径恢复源表基线和空目标表。该 suite 仅可从手工 workflow 运行，首次真实通过前不得增加 schedule。
+任务和服务按捕获 ID 删除并确认 404，退出时核对授权撤销并销毁临时容器与卷。该 suite 仅可从手工 workflow 运行，首次真实通过前不得增加 schedule。
 
 ### openGauss 消费
 

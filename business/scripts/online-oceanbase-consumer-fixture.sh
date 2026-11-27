@@ -1,82 +1,31 @@
 #!/usr/bin/env bash
-# Lifecycle owner for the dedicated OceanBase consumer-chain T4 Online fixture.
-
+# Disposable OceanBase source for the Hosted relational consumer suite.
 set -euo pipefail
-
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-BUSINESS_DIR=$(cd "${SCRIPT_DIR}/.." && pwd -P)
 SOURCE_TABLE=addp_online_consumer_source
 TARGET_TABLE=addp_online_consumer_target
-OCEANBASE_IMAGE=oceanbase/oceanbase-ce:4.4.2-lts
+IMAGE=oceanbase/oceanbase-ce:4.4.2-lts@sha256:eaa2c3b3513fa21e4a658f197c1deb93c9d6b6eb742cfa5ef0f085f82b9cec54
 
-fail() {
-  echo "Online OceanBase consumer fixture failed: $*" >&2
-  exit 1
-}
-
-[ "${ADDP_ONLINE_HOST:-}" = "1" ] || fail "ADDP_ONLINE_HOST must be exactly 1"
-[ "$(uname -s)" = "Darwin" ] || fail "the Online OceanBase consumer fixture requires macOS"
-
-action=${1:-}
-case "$action" in
-  start|advance|stop|status) ;;
-  *) fail "usage: bash business/scripts/online-oceanbase-consumer-fixture.sh start|advance|stop|status" ;;
-esac
-[ "$#" -eq 1 ] || fail "exactly one action is required"
-
-required=(
-  ADDP_ONLINE_OCEANBASE_PORT
-  ADDP_ONLINE_OCEANBASE_DATABASE
-  ADDP_ONLINE_OCEANBASE_USER
-  ADDP_ONLINE_OCEANBASE_PASSWORD
-)
-for variable in "${required[@]}"; do
-  [ -n "${!variable:-}" ] || fail "$variable is required"
-done
-[[ "$ADDP_ONLINE_OCEANBASE_PORT" =~ ^[0-9]+$ ]] || fail "ADDP_ONLINE_OCEANBASE_PORT must be numeric"
-[ "$ADDP_ONLINE_OCEANBASE_PORT" -ge 1024 ] && [ "$ADDP_ONLINE_OCEANBASE_PORT" -le 65535 ] ||
-  fail "ADDP_ONLINE_OCEANBASE_PORT must be between 1024 and 65535"
-[[ "$ADDP_ONLINE_OCEANBASE_DATABASE" =~ ^[A-Za-z][A-Za-z0-9_]{0,62}$ ]] ||
-  fail "ADDP_ONLINE_OCEANBASE_DATABASE must be a safe OceanBase identifier"
-[[ "$ADDP_ONLINE_OCEANBASE_USER" =~ ^[A-Za-z][A-Za-z0-9_]{0,31}@[A-Za-z][A-Za-z0-9_]{0,31}$ ]] ||
-  fail "ADDP_ONLINE_OCEANBASE_USER must be a tenant-qualified OceanBase account"
-[[ "$ADDP_ONLINE_OCEANBASE_PASSWORD" =~ ^[A-Za-z0-9_.-]{16,128}$ ]] ||
-  fail "ADDP_ONLINE_OCEANBASE_PASSWORD must contain 16-128 URL-safe characters"
-
-OCEANBASE_TENANT=${ADDP_ONLINE_OCEANBASE_USER##*@}
-
-docker_fixture() {
-  env \
-    OCEANBASE_IMAGE="$OCEANBASE_IMAGE" \
-    OCEANBASE_MODE=mini \
-    OCEANBASE_PORT="$ADDP_ONLINE_OCEANBASE_PORT" \
-    OCEANBASE_DATABASE="$ADDP_ONLINE_OCEANBASE_DATABASE" \
-    OCEANBASE_TENANT_NAME="$OCEANBASE_TENANT" \
-    OCEANBASE_PASSWORD="$ADDP_ONLINE_OCEANBASE_PASSWORD" \
-    docker "$@"
-}
-
-compose() {
-  docker_fixture compose --env-file /dev/null -f "$BUSINESS_DIR/docker-compose.yml" "$@"
-}
-
-container_running() {
-  [ "$(docker_fixture inspect --format '{{.State.Running}}' business-oceanbase 2>/dev/null || true)" = "true" ]
-}
+fail() { echo "OceanBase fixture: $*" >&2; exit 1; }
 
 admin_obclient() {
-  docker_fixture exec business-oceanbase obclient \
-    -h127.0.0.1 -P2881 \
-    -u"$ADDP_ONLINE_OCEANBASE_USER" \
-    --password="$ADDP_ONLINE_OCEANBASE_PASSWORD" "$@"
+  docker exec -i "$CONTAINER" sh -c 'exec obclient -h127.0.0.1 -P2881 -uroot@test --password="$OB_TENANT_PASSWORD" "$@"' _ "$@"
 }
 
-database_obclient() {
-  admin_obclient -D"$ADDP_ONLINE_OCEANBASE_DATABASE" "$@"
-}
+database_obclient() { admin_obclient -Doceanbase_fixture "$@"; }
 
 reset_fixture() {
-  admin_obclient -e "CREATE DATABASE IF NOT EXISTS \`$ADDP_ONLINE_OCEANBASE_DATABASE\`" >/dev/null
+  local password
+  password=$(openssl rand -hex 32)
+  admin_obclient > /dev/null 2>"$ADDP_ONLINE_SECRET_DIR/ob-seed-error.log" <<SQL
+CREATE DATABASE oceanbase_fixture;
+CREATE DATABASE sales;
+CREATE DATABASE outside_sales;
+CREATE TABLE sales.node_existing (id INT PRIMARY KEY);
+INSERT INTO sales.node_existing VALUES (37);
+CREATE USER ob_consumer IDENTIFIED BY '$password';
+GRANT SELECT ON sales.* TO ob_consumer;
+GRANT SELECT ON outside_sales.* TO ob_consumer;
+SQL
   database_obclient <<SQL >/dev/null
 DROP TABLE IF EXISTS \`$TARGET_TABLE\`;
 DROP TABLE IF EXISTS \`$SOURCE_TABLE\`;
@@ -101,6 +50,22 @@ INSERT INTO \`$SOURCE_TABLE\` (id, item_code, quantity, amount, updated_at) VALU
   (4, 'OB-1004', 8, 12.25, '2026-09-01 08:00:00.000004'),
   (5, 'OB-1005', 3, 50.75, '2026-09-01 08:00:00.000005');
 SQL
+  admin_obclient <<SQL
+GRANT SELECT ON oceanbase_fixture.$SOURCE_TABLE TO ob_consumer;
+GRANT SELECT, INSERT, UPDATE, DELETE ON oceanbase_fixture.$TARGET_TABLE TO ob_consumer;
+SQL
+  # Ordinary tenants hide QUERY_SQL by default. Only the disposable source
+  # tenant enables observation, after credential provisioning has finished.
+  admin_obclient -e 'ALTER SYSTEM SET _enable_sql_audit_query_sql = true'
+  OB_PORT=$(docker port "$CONTAINER" 2881/tcp | cut -d: -f2) OB_PASSWORD="$password" python3 - <<'DESCRIPTOR'
+import json, os
+connection = dict(host="127.0.0.1", port=int(os.environ["OB_PORT"]), database="oceanbase_fixture",
+                  user="ob_consumer@test", password=os.environ["OB_PASSWORD"])
+with open(os.open(os.environ["ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE"],
+                  os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600), "w") as descriptor:
+    json.dump(dict(engine_type="oceanbase", engine_origin="general", name="Hosted OceanBase consumer",
+                   description="Disposable OceanBase relational consumer", connection_info=connection), descriptor)
+DESCRIPTOR
   database_obclient --batch --skip-column-names -e \
     "SELECT COUNT(*) FROM \`$SOURCE_TABLE\`" | grep -qx '5' ||
     fail "OceanBase source fixture must contain exactly five rows"
@@ -127,50 +92,71 @@ SQL
     grep -qx '2' || fail "OceanBase fixture advance must expose exactly two watermark rows"
 }
 
-validate_container_ownership() {
-  if ! docker_fixture inspect business-oceanbase >/dev/null 2>&1; then
-    return 0
-  fi
-  local ownership
-  ownership=$(docker_fixture inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}' business-oceanbase)
-  [ "$ownership" = "business/oceanbase" ] ||
-    fail "business-oceanbase is not owned by the business/oceanbase Compose service"
+create_future() {
+  admin_obclient <<'SQL'
+CREATE TABLE sales.node_future (id INT PRIMARY KEY);
+INSERT INTO sales.node_future VALUES (41);
+CREATE TABLE outside_sales.node_future (id INT PRIMARY KEY);
+INSERT INTO outside_sales.node_future VALUES (83);
+SQL
 }
 
-validate_container_ownership
+audit_position() {
+  admin_obclient -N -B -Doceanbase -e 'SELECT MAX(REQUEST_ID) FROM GV$OB_SQL_AUDIT'
+}
 
-case "$action" in
+count_reads() {
+  local anchor=$1
+  [[ "$anchor" =~ ^[0-9]+$ ]] || fail "missing native audit position"
+  # A retained anchor on this single observer proves the observation window
+  # has not been evicted. Report no count if it has.
+  admin_obclient -N -B -Doceanbase <<SQL
+SELECT COUNT(*) FROM GV\$OB_SQL_AUDIT
+WHERE REQUEST_ID > $anchor AND USER_NAME='ob_consumer' AND IS_INNER_SQL=0
+  AND LOWER(TRIM(QUERY_SQL)) LIKE 'select%'
+  AND LOWER(REPLACE(QUERY_SQL,CHAR(96),'')) REGEXP 'from[[:space:]]+((outside_sales|sales)[.])?node_(existing|future)([[:space:];]|$)'
+HAVING EXISTS (SELECT 1 FROM GV\$OB_SQL_AUDIT WHERE REQUEST_ID=$anchor);
+SQL
+}
+
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
+[ "${ADDP_ONLINE_HOST:-}/${ADDP_ONLINE_HOSTED:-}/${GITHUB_ACTIONS:-}/${RUNNER_OS:-}" = "1/1/true/Linux" ] &&
+  [ "$(uname -s)" = Linux ] && [ "${ONLINE_SUITE_INPUT:-}" = oceanbase-consumer-flow ] ||
+  fail "requires the disposable GitHub Hosted Linux suite"
+CONTAINER=addp-online-oceanbase-consumer
+owner="oceanbase-consumer-flow:${GITHUB_RUN_ID:?}:${GITHUB_RUN_ATTEMPT:?}"
+[ "$#" = 1 ] || fail "expected one action"
+if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+  [ "$(docker inspect --format '{{index .Config.Labels "addp.fixture"}}' "$CONTAINER")" = "$owner" ] ||
+    fail "refusing foreign container"
+fi
+case "$1" in
   start)
-    compose up -d oceanbase
+    OB_TENANT_PASSWORD=$(openssl rand -hex 32)
+    export OB_TENANT_PASSWORD
+    docker run -d --name "$CONTAINER" --label "addp.fixture=$owner" -p 127.0.0.1::2881 \
+      -e MODE=mini -e OB_TENANT_NAME=test -e OB_DATABASE=oceanbase -e OB_TENANT_PASSWORD "$IMAGE"
     for _ in $(seq 1 180); do
-      if container_running && admin_obclient --batch --skip-column-names -e 'SELECT 1' >/dev/null 2>&1; then
-        reset_fixture
-        echo "Online OceanBase consumer fixture is ready on port $ADDP_ONLINE_OCEANBASE_PORT"
-        exit 0
-      fi
+      if admin_obclient -Nse 'SELECT 1' >/dev/null 2>&1; then reset_fixture; exit 0; fi
       sleep 2
     done
-    fail "business-oceanbase did not become ready"
+    fail "source did not become ready"
     ;;
-  advance)
-    container_running || fail "business-oceanbase is not running"
-    advance_fixture
-    echo "Online OceanBase consumer fixture advanced by two watermark rows"
-    ;;
+  status) admin_obclient -Nse 'SELECT 1' | grep -qx 1 ;;
+  advance) advance_fixture ;;
+  create-future) create_future ;;
+  position) audit_position ;;
+  counts) count_reads "${OB_AUDIT_POSITION:?}" ;;
   stop)
-    if container_running; then
-      reset_fixture
+    if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+      volumes=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$CONTAINER")
+      docker rm -fv "$CONTAINER"
+      for volume in $volumes; do
+        [ -z "$(docker volume ls -q --filter "name=^$volume$")" ] || fail "source volume remains"
+      done
     fi
-    compose rm -sf oceanbase
-    if container_running; then
-      fail "business-oceanbase is still running"
-    fi
-    echo "Online OceanBase consumer fixture is stopped"
+    remaining=$(docker ps -aq --filter "label=addp.fixture=$owner")
+    [ -z "$remaining" ] || fail "source container remains"
     ;;
-  status)
-    container_running || fail "business-oceanbase is not running"
-    database_obclient --batch --skip-column-names -e 'SELECT 1' | grep -qx '1' ||
-      fail "business-oceanbase fixture account is not ready"
-    echo "Online OceanBase consumer fixture is ready"
-    ;;
+  *) fail "unknown action" ;;
 esac

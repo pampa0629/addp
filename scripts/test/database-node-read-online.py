@@ -1,4 +1,4 @@
-"""Verify one TiDB node Grant through System, Develop and native statement counters."""
+"""Verify database node Grants through their integrated consumer and native statement counters."""
 
 import json
 import os
@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import uuid
+from urllib.parse import urlencode
 from importlib import import_module
 from pathlib import Path
 
@@ -86,7 +87,7 @@ def revoke(preparer, consumer, entry, *, confirmed=False):
         "POST",
         f"/api/v1/system/engines/{entry['engine']}/access_grants/{entry['request_id']}/revoke",
         (200,) if confirmed else (200, 404),
-        {"reason": "End isolated TiDB acceptance"},
+        {"reason": "End isolated database acceptance"},
     )
     consumer.request(
         "POST",
@@ -96,7 +97,7 @@ def revoke(preparer, consumer, entry, *, confirmed=False):
     )
 
 
-def cleanup(preparer, consumer, journal, artifacts):
+def cleanup(preparer, consumer, journal, artifacts, engine_type="tidb"):
     failed, revoked = [], []
     for entry in json.loads(journal.read_text()):
         try:
@@ -106,13 +107,39 @@ def cleanup(preparer, consumer, journal, artifacts):
             failed.append(entry)
     write_json(journal, failed)
     write_json(
-        artifacts / "tidb-grant-cleanup.json", dict(revoked=revoked, failed=[e["request_id"] for e in failed])
+        artifacts / f"{engine_type}-grant-cleanup.json", dict(revoked=revoked, failed=[e["request_id"] for e in failed])
     )
     if failed:
-        raise FLOW.SuiteError("TiDB Grant cleanup incomplete")
+        raise FLOW.SuiteError("database Grant cleanup incomplete")
 
 
-def verify(preparer, consumer, tenant, engine, journal, artifacts):
+def observe_preview(consumer, engine, checks, phase, database, table, expected):
+    fixture = FLOW.PROFILES["oceanbase"].fixture_script
+    locator = f"addp://engine/{engine}/path/{database}/{table}?type=table"
+    position = int(subprocess.check_output(["bash", fixture, "position"], text=True).strip())
+    status = 403 if expected is None else 200
+    entry = checks[phase] = dict(locator=locator, audit_position=position, expected_status=status)
+    if expected is None:
+        query = urlencode({"locator": locator, "page": 1, "page_size": 100})
+        consumer.request("GET", f"/api/v1/manager/preview?{query}", (403,))
+    else:
+        columns, rows = FLOW.SUPPORT.preview_rows(consumer, locator)
+        if columns != ["id"] or rows not in ([{"id": expected}], [{"id": str(expected)}]):
+            raise FLOW.SuiteError(f"OceanBase {phase}: wrong Manager preview")
+        entry["returned_id"] = expected
+    count = subprocess.check_output(["bash", fixture, "counts"], text=True,
+                                    env=dict(os.environ, OB_AUDIT_POSITION=str(position)))
+    delta = int(count.strip())
+    entry.update(status=status, source_selects=delta)
+    if (expected is None and delta != 0) or (expected is not None and delta < 1):
+        raise FLOW.SuiteError(f"OceanBase {phase}: unexpected source business SELECT count {delta}")
+
+
+def verify(preparer, consumer, tenant, engine, journal, artifacts, engine_type="tidb"):
+    manager_preview = engine_type == "oceanbase"
+    database = "sales" if manager_preview else "tidb_scope"
+    outside = "outside_sales" if manager_preview else "tidb_outside"
+    fixture = FLOW.PROFILES[engine_type].fixture_script
     operator, recipient = REG.source_grant_participants(preparer, consumer, tenant, scan_preparation=True)
     FLOW.validate_user_identity(consumer, tenant)
     pending = []
@@ -126,11 +153,11 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts):
         preparer,
         consumer,
         tenant,
-        [(engine, "database", "tidb_fixture", name) for name in (FLOW.SOURCE_TABLE, FLOW.TARGET_TABLE)],
+        [(engine, "database", f"{engine_type}_fixture", name) for name in (FLOW.SOURCE_TABLE, FLOW.TARGET_TABLE)],
         scan_preparation=True,
         on_pending=remember,
     )
-    target = REG.ExactRecordGrants.target(engine, "tidb_scope", "node_existing", "table")
+    target = REG.ExactRecordGrants.target(engine, database, "node_existing", "table")
     scope = dict(target, segments=target["segments"][:-1])
     command = str(uuid.uuid4())
     checks = {}
@@ -141,7 +168,7 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts):
         grant=command,
         scope=scope,
         initial_scan_id=initial_scan,
-        source_account="tidb_consumer",
+        source_account="ob_consumer@test" if manager_preview else "tidb_consumer",
         checks=checks,
     )
     body = dict(
@@ -152,11 +179,18 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts):
         recipient_type="user",
         recipient_id=recipient,
         expiry_mode="until_revoked",
-        reason="Isolated TiDB database Grant",
+        reason=f"Isolated {engine_type} database Grant",
     )
     consumer.request(
         "POST", "/api/v1/system/engine-access/read-observations/current-source", (403,), {"targets": [target]}
     )
+    if manager_preview:
+        report["consumer"] = "manager.preview"
+        report["develop_per_table_authorization"] = "not_verified"
+        try:
+            observe_preview(consumer, engine, checks, "before_grant", database, "node_existing", None)
+        finally:
+            write_json(artifacts / f"{engine_type}-node-read.json", report)
     remember(engine, command, target)
     receipt = preparer.request("POST", f"/api/v1/system/engines/{engine}/access_grants", (201,), body).payload
     if (
@@ -169,43 +203,43 @@ def verify(preparer, consumer, tenant, engine, journal, artifacts):
         or receipt.get("engine_id") != str(engine)
         or receipt.get("operator_principal_id") != operator
     ):
-        raise FLOW.SuiteError("TiDB node grant receipt does not match command")
+        raise FLOW.SuiteError("database node grant receipt does not match command")
 
     def execute(engine_id, locator, query):
         return EXECUTIONS.develop_execution(
             consumer, engine_id, locator, time.monotonic() + 120, query, "sql"
         )
 
+    def check(phase, namespace, table, expected):
+        if manager_preview:
+            observe_preview(consumer, engine, checks, phase, namespace, table, expected)
+        else:
+            observe(execute, engine, checks, phase, namespace, table, expected)
+
     try:
-        observe(execute, engine, checks, "existing", "tidb_scope", "node_existing", 37)
-        subprocess.run(["bash", FIXTURE, "create-future"], check=True)
+        check("existing", database, "node_existing", 37)
+        subprocess.run(["bash", fixture, "create-future"], check=True)
         report["future_scan_id"] = FLOW.wait_for_scan(preparer, engine, time.monotonic() + 180)
-        observe(execute, engine, checks, "future", "tidb_scope", "node_future", 41)
-        observe(execute, engine, checks, "same_name_outside", "tidb_outside", "node_future", None)
-        observe(
-            execute,
-            engine,
-            checks,
-            "join_outside",
-            "tidb_scope",
-            "node_future",
-            None,
-            "SELECT a.id FROM tidb_scope.node_future a JOIN tidb_outside.node_future b ON a.id=b.id",
-        )
+        check("future", database, "node_future", 41)
+        check("same_name_outside", outside, "node_future", None)
+        if not manager_preview:
+            observe(execute, engine, checks, "join_outside", database, "node_future", None,
+                    "SELECT a.id FROM tidb_scope.node_future a JOIN tidb_outside.node_future b ON a.id=b.id")
         revoke(preparer, consumer, pending[-1], confirmed=True)
-        observe(execute, engine, checks, "revoked", "tidb_scope", "node_future", None)
+        check("revoked", database, "node_future", None)
     finally:
-        write_json(artifacts / "tidb-node-read.json", report)
+        write_json(artifacts / f"{engine_type}-node-read.json", report)
 
 
 def main(action):
+    engine_type = {"oceanbase-consumer-flow": "oceanbase", "tidb-consumer-flow": "tidb"}[os.environ["ONLINE_SUITE_INPUT"]]
     url = os.environ["GATEWAY_URL"]
     consumer = FLOW.GatewayClient(url, os.environ["ADDP_ONLINE_TEST_USER_ACCESS_TOKEN"], 30)
     preparer = FLOW.GatewayClient(url, os.environ["ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"], 30)
-    journal = Path(os.environ["ADDP_ONLINE_SECRET_DIR"], "tidb-grants.json")
+    journal = Path(os.environ["ADDP_ONLINE_SECRET_DIR"], f"{engine_type}-grants.json")
     artifacts = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"])
     if action == "cleanup":
-        cleanup(preparer, consumer, journal, artifacts)
+        cleanup(preparer, consumer, journal, artifacts, engine_type)
     elif action == "verify":
         verify(
             preparer,
@@ -213,7 +247,7 @@ def main(action):
             int(os.environ["ADDP_ONLINE_TEST_TENANT_ID"]),
             int(os.environ["ADDP_ONLINE_CONSUMER_ENGINE_ID"]),
             journal,
-            artifacts,
+            artifacts, engine_type,
         )
     else:
         raise FLOW.SuiteError("expected verify or cleanup")

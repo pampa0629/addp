@@ -4389,26 +4389,10 @@ class OnlineCIRegistrationTest(unittest.TestCase):
             CHECK.check_registration(self.repository)
 
     def test_requires_oceanbase_consumer_flow_owner_contract(self) -> None:
-        host = self.repository / "scripts/test/online-host-gate.sh"
-        host.write_text(
-            host.read_text(encoding="utf-8")
-            + "\noceanbase-consumer-flow)\n"
-            + "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL\n"
-            + "ADDP_ONLINE_OCEANBASE_ENGINE_ID ADDP_ONLINE_OCEANBASE_PORT\n"
-            + "ADDP_ONLINE_OCEANBASE_DATABASE ADDP_ONLINE_OCEANBASE_USER ADDP_ONLINE_OCEANBASE_PASSWORD\n"
-            + "bash business/scripts/online-oceanbase-consumer-fixture.sh start\n"
-            + "bash business/scripts/online-oceanbase-consumer-fixture.sh stop\n"
-            + 'bash scripts/dev/start.sh "$START_TARGET"\n',
-            encoding="utf-8",
-        )
-        fixture = self.repository / "business/scripts/online-oceanbase-consumer-fixture.sh"
-        fixture.parent.mkdir(parents=True, exist_ok=True)
-        fixture.write_text(
-            "ADDP_ONLINE_HOST --env-file /dev/null oceanbase/oceanbase-ce:4.4.2-lts "
-            "business-oceanbase addp_online_consumer_source addp_online_consumer_target "
-            "start|advance|stop|status reset_fixture\n",
-            encoding="utf-8",
-        )
+        for relative in ("scripts/test/online-hosted-oceanbase-gate.sh", "business/scripts/online-oceanbase-consumer-fixture.sh"):
+            path = self.repository / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text((Path(__file__).parents[2] / relative).read_text())
         support = self.repository / "scripts/test/security-transfer-protection-online.py"
         support.write_text(
             "/api/v1/meta/scan/run/manual\n/api/v1/manager/preview\n",

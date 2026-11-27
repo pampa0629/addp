@@ -471,29 +471,13 @@ class OnlineHostGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.command_log.exists())
 
-    def test_runs_oceanbase_consumer_flow_with_owned_fixture(self) -> None:
-        result = self._run("oceanbase-consumer-flow")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.command_log.read_text(encoding="utf-8").splitlines(),
-            [
-                "stop",
-                "infra-up",
-                "oceanbase-fixture:stop",
-                "oceanbase-fixture:start",
-                "start:-all",
-                "make:test-online:ONLINE_SUITE=oceanbase-consumer-flow",
-                "stop",
-                "oceanbase-fixture:stop",
-            ],
-        )
-
-    def test_tidb_has_no_dedicated_host_route(self) -> None:
-        result = self._run("tidb-consumer-flow")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no dedicated deployment profile", result.stderr)
-        self.assertFalse(self.command_log.exists() and self.command_log.read_text().strip())
+    def test_hosted_database_suites_have_no_dedicated_host_route(self) -> None:
+        for suite in ("tidb-consumer-flow", "oceanbase-consumer-flow"):
+            with self.subTest(suite=suite):
+                result = self._run(suite)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("no dedicated deployment profile", result.stderr)
+                self.assertFalse(self.command_log.exists() and self.command_log.read_text().strip())
 
     def test_daemon_launcher_does_not_keep_gate_log_pipe_open(self) -> None:
         result = self._run(

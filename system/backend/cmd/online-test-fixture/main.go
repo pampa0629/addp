@@ -158,7 +158,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return slices.Clone(sourceInitializerPermissions)
 		}
 		return nil
-	case "tidb-consumer-flow":
+	case "oceanbase-consumer-flow", "tidb-consumer-flow":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "ontology-agent-protection", "raster-workflow-capacity", "ftp-consumer-flow", "manager-internal-artifact-lineage", "highgo-consumer-flow", "security-mysql-owner-protection", "security-plaintext-access", "hdfs-spark-consumer-flow", "cleanup-native-effects", "opengauss-consumer-flow", "transfer-relational-sql-etl":
 		permissions := append([]string{}, sourceInitializerPermissions...)
@@ -439,7 +439,7 @@ func suitePermissions(suite string) ([]string, error) {
 		return append(permissions, "manager.content.read", "manager.search.execute", "manager.derived_artifact.create", "manager.derived_artifact.read", "monitor.execution.read", "service.definition.update", "develop.data_write.execute", "transfer.task.update"), nil
 	case "security-plaintext-access":
 		return plaintextApplicantPermissions, nil
-	case "tidb-consumer-flow", "opengauss-consumer-flow", "kingbase-consumer-flow":
+	case "oceanbase-consumer-flow", "tidb-consumer-flow", "opengauss-consumer-flow", "kingbase-consumer-flow":
 		return consumerPermissions, nil
 	case "elasticsearch-consumer-flow":
 		return readWorkflowConsumerPermissions, nil
@@ -537,7 +537,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" || rasterHostedSourcePreparation(suite) {
 		return true
 	}
-	return suite == "tidb-consumer-flow" || suite == "raster-hillshade-orthogonal-persistence" || suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "oceanbase-consumer-flow" || suite == "tidb-consumer-flow" || suite == "raster-hillshade-orthogonal-persistence" || suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -1372,7 +1372,7 @@ func validateExternalEnvironment(environment []string, output, suite string) err
 	if suite == "orchestrator-execution" && values[orchestratorCaseEnv] == scheduledFileCase && values["ADDP_ONLINE_HOSTED"] != "1" {
 		return errors.New("scheduled file fixture requires disposable GitHub Hosted Linux")
 	}
-	if (suite == "compose-public-origin" || suite == "tidb-consumer-flow" || rasterHostedSourcePreparation(suite)) && values["ADDP_ONLINE_HOSTED"] != "1" {
+	if (suite == "compose-public-origin" || suite == "oceanbase-consumer-flow" || suite == "tidb-consumer-flow" || rasterHostedSourcePreparation(suite)) && values["ADDP_ONLINE_HOSTED"] != "1" {
 		return fmt.Errorf("%s fixture requires disposable GitHub Hosted Linux", suite)
 	}
 	if !filepath.IsAbs(output) {

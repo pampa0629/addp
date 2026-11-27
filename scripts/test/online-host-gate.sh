@@ -102,16 +102,6 @@ case "$ONLINE_SUITE" in
       ADDP_ONLINE_TEST_ENGINE_PASSWORD ADDP_ONLINE_TEST_ENGINE_DATABASE
     )
     ;;
-  oceanbase-consumer-flow)
-    START_TARGET=-all
-    REQUIRED_SUITE_ENV=(
-      SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL
-      ADDP_ONLINE_TEST_USER_ACCESS_TOKEN ADDP_ONLINE_TEST_TENANT_ID
-      ADDP_ONLINE_OCEANBASE_ENGINE_ID ADDP_ONLINE_OCEANBASE_PORT
-      ADDP_ONLINE_OCEANBASE_DATABASE ADDP_ONLINE_OCEANBASE_USER
-      ADDP_ONLINE_OCEANBASE_PASSWORD
-    )
-    ;;
   manager-hybrid-search)
     START_TARGET=-all
     REQUIRED_SUITE_ENV=(
@@ -257,7 +247,6 @@ process_lifecycle=not-applicable
 engine_fixture_cleanup_required=0
 engine_restore_required=0
 workbench_mysql_cleanup_required=0
-oceanbase_consumer_cleanup_required=0
 manager_minio_cleanup_required=0
 security_transfer_fixture_cleanup_required=0
 transfer_insert_only_cleanup_required=0
@@ -331,12 +320,6 @@ finish() {
       gate_status=1
     fi
   fi
-  if [ "$oceanbase_consumer_cleanup_required" -eq 1 ]; then
-    if ! run_logged bash business/scripts/online-oceanbase-consumer-fixture.sh stop; then
-      cleanup=failed
-      gate_status=1
-    fi
-  fi
   if [ "$gate_status" -eq 0 ]; then
     result=passed
   else
@@ -395,14 +378,6 @@ elif [ "$ONLINE_SUITE" = "transfer-insert-only-mysql" ]; then
   run_logged bash business/scripts/online-transfer-insert-only-fixture.sh start
   run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
   run_logged npm --prefix console/frontend exec -- playwright install chromium
-elif [ "$ONLINE_SUITE" = "oceanbase-consumer-flow" ]; then
-  oceanbase_consumer_cleanup_required=1
-  run_logged bash business/scripts/online-oceanbase-consumer-fixture.sh stop
-  run_logged bash business/scripts/online-oceanbase-consumer-fixture.sh start
-  export ADDP_ONLINE_CONSUMER_ENGINE_TYPE=oceanbase
-  export ADDP_ONLINE_CONSUMER_ENGINE_ID="$ADDP_ONLINE_OCEANBASE_ENGINE_ID"
-  export ADDP_ONLINE_CONSUMER_NAMESPACE="$ADDP_ONLINE_OCEANBASE_DATABASE"
-  run_daemon_launcher_logged bash scripts/dev/start.sh "$START_TARGET"
 elif [ "$ONLINE_SUITE" = "manager-hybrid-search" ]; then
   manager_minio_cleanup_required=1
   run_logged bash business/scripts/online-manager-minio-fixture.sh stop

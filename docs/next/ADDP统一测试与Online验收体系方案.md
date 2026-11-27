@@ -15,6 +15,8 @@
 3. 先运行 `bash scripts/test/online-host-gate.sh --check-only`，检查工具链、checkout、回环边界、环境权限及证据目录；不放宽准入绕过资源不足。
 4. 通过 workflow 按 suite 运行，核对构建身份、AuthContext、业务断言、addp.online-gate/v1 报告及成功/失败/中断清理，保存外部 Artifact。
 
+OceanBase 的 Hosted Linux 节点授权与原消费链仍待取得完整运行报告。
+
 ## 三、待取得专用环境报告的范围
 
 以下按当前 workflow 的默认 self-hosted 分发列出，不是历史固定数量；新增或迁出 profile 时直接更新清单：
@@ -23,7 +25,6 @@
 - [ ] `enterprise-catalog-publishing`。
 - [ ] `manager-hybrid-search`。
 - [ ] `module-registry-recovery`。
-- [ ] `oceanbase-consumer-flow`。
 - [ ] `security-transfer-protection`。
 - [ ] `standard-model-reference-deletion`。
 - [ ] `tidb-consumer-flow`。

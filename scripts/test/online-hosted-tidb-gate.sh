@@ -10,7 +10,7 @@ HOSTED_FIXTURE_IMAGES=()
 
 before_online_application_stop() {
   [ ! -f "$ADDP_ONLINE_SECRET_DIR/tidb-grants.json" ] ||
-    run_logged bash -c 'source "$1"; python3 -m scripts.test.tidb-node-read-online cleanup' _ "$IDENTITY_ENV"
+    run_logged bash -c 'source "$1"; python3 -m scripts.test.database-node-read-online cleanup' _ "$IDENTITY_ENV"
 }
 stop_online_fixture() {
   run_logged bash business/scripts/online-tidb-consumer-fixture.sh stop
@@ -32,6 +32,6 @@ unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
 export ADDP_ONLINE_CONSUMER_ENGINE_ID
 export ADDP_ONLINE_CONSUMER_ENGINE_TYPE=tidb
 export ADDP_ONLINE_CONSUMER_NAMESPACE=tidb_fixture
-run_logged python3 -m scripts.test.tidb-node-read-online verify
+run_logged python3 -m scripts.test.database-node-read-online verify
 unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN
 run_logged make test-online "ONLINE_SUITE=$ONLINE_SUITE"

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-NODE = import_module("scripts.test.tidb-node-read-online")
+NODE = import_module("scripts.test.database-node-read-online")
 
 
 class TiDBNodeReadTest(unittest.TestCase):

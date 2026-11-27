@@ -1488,20 +1488,17 @@ def validate_oceanbase_consumer_flow_profile(
 ) -> None:
     if "oceanbase-consumer-flow" not in registered:
         return
-    host_gate = (repository / "scripts/test/online-host-gate.sh").read_text(
-        encoding="utf-8"
-    )
+    host_gate = (repository / "scripts/test/online-hosted-oceanbase-gate.sh").read_text(encoding="utf-8")
     required_fragments = (
-        "oceanbase-consumer-flow)",
-        "SYSTEM_URL GATEWAY_URL META_URL MANAGER_URL TRANSFER_URL DEVELOP_URL SERVICE_URL",
-        "ADDP_ONLINE_OCEANBASE_ENGINE_ID",
-        "ADDP_ONLINE_OCEANBASE_PORT",
-        "ADDP_ONLINE_OCEANBASE_DATABASE",
-        "ADDP_ONLINE_OCEANBASE_USER",
-        "ADDP_ONLINE_OCEANBASE_PASSWORD",
+        "ADDP_ONLINE_SUITES=oceanbase-consumer-flow",
+        "ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64",
+        "go run ./cmd/online-test-fixture --suite oceanbase-consumer-flow",
+        "scripts/test/online-engine-registration.py",
+        "scripts.test.database-node-read-online verify",
+        "scripts.test.database-node-read-online cleanup",
+        "unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
         "bash business/scripts/online-oceanbase-consumer-fixture.sh start",
         "bash business/scripts/online-oceanbase-consumer-fixture.sh stop",
-        'bash scripts/dev/start.sh "$START_TARGET"',
     )
     missing = [fragment for fragment in required_fragments if not source_contract_contains(host_gate, fragment, repository)]
     if missing:
@@ -1521,12 +1518,12 @@ def validate_oceanbase_consumer_flow_profile(
     ).read_text(encoding="utf-8")
     for fragment in (
         "ADDP_ONLINE_HOST",
-        "--env-file /dev/null",
-        "oceanbase/oceanbase-ce:4.4.2-lts",
-        "business-oceanbase",
+        "oceanbase/oceanbase-ce:4.4.2-lts@sha256:",
+        "addp-online-oceanbase-consumer",
         "addp_online_consumer_source",
         "addp_online_consumer_target",
-        "start|advance|stop|status",
+        "GV$OB_SQL_AUDIT",
+        "docker rm -fv",
         "reset_fixture",
     ):
         if not source_contract_contains(fixture, fragment, repository):
@@ -1580,8 +1577,8 @@ def validate_tidb_consumer_flow_profile(
         "python3 scripts/test/online-engine-registration.py",
         "bash business/scripts/online-tidb-consumer-fixture.sh start",
         "bash business/scripts/online-tidb-consumer-fixture.sh stop",
-        "scripts.test.tidb-node-read-online verify",
-        "scripts.test.tidb-node-read-online cleanup",
+        "scripts.test.database-node-read-online verify",
+        "scripts.test.database-node-read-online cleanup",
         "unset ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN",
         'make test-online "ONLINE_SUITE=$ONLINE_SUITE"',
     )
