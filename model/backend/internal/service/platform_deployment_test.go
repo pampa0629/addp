@@ -57,6 +57,9 @@ func TestInstalledModelEntity(t *testing.T) {
 	t.Run("fact_dimension_relation_version", func(t *testing.T) {
 		testDimensionRelationOwnershipAndUpdates(t, db, 13)
 	})
+	t.Run("dimension_hierarchy_version", func(t *testing.T) {
+		exerciseDimensionHierarchyVersion(t, db, 14)
+	})
 	t.Run("entity_relation_revision", func(t *testing.T) {
 		const relationTenant = 11
 		exerciseEntityRelationRevision(t, db, relationTenant)
