@@ -105,6 +105,10 @@ if [ "$1" = info ]; then
     printf '{"OSType":"linux","Architecture":"aarch64"}\n'
     exit 0
 fi
+if [ "$*" = 'ps -aq --filter label=com.docker.compose.project=addp-platform --filter label=com.docker.compose.service=system-backend --filter label=com.docker.compose.oneoff=False' ]; then
+    # A fresh deployment has no existing System container.
+    exit 0
+fi
 exit 1
 ''')
             stub.chmod(0o755)
