@@ -287,11 +287,16 @@ func TestPostgresLogicalTableAssociationsShareAggregateVersion(t *testing.T) {
 
 func TestPostgresEntityRelationUsesVersionAndAdvancesCollectionRevision(t *testing.T) {
 	tx, tenantID := beginModelAggregatePostgresTransaction(t)
+	exerciseEntityRelationRevision(t, tx, tenantID)
+}
+
+func exerciseEntityRelationRevision(t *testing.T, tx *gorm.DB, tenantID int64) {
+	t.Helper()
 	userID := tenantID + 1
 	entities := []models.Entity{
-		{TenantID: tenantID, Name: "PostgreSQL Customer", Code: "pg_relation_customer", Status: "draft", Version: 1, CreatedBy: userID},
-		{TenantID: tenantID, Name: "PostgreSQL Order", Code: "pg_relation_order", Status: "draft", Version: 1, CreatedBy: userID},
-		{TenantID: tenantID, Name: "PostgreSQL Product", Code: "pg_relation_product", Status: "draft", Version: 1, CreatedBy: userID},
+		{TenantID: tenantID, Name: "Customer", Code: "relation_customer", Status: "draft", Version: 1, CreatedBy: userID},
+		{TenantID: tenantID, Name: "Order", Code: "relation_order", Status: "draft", Version: 1, CreatedBy: userID},
+		{TenantID: tenantID, Name: "Product", Code: "relation_product", Status: "draft", Version: 1, CreatedBy: userID},
 	}
 	for index := range entities {
 		if err := tx.Create(&entities[index]).Error; err != nil {
@@ -306,7 +311,7 @@ func TestPostgresEntityRelationUsesVersionAndAdvancesCollectionRevision(t *testi
 		RelationType: "one_to_many", Name: "places", Description: "customer places order",
 	})
 	if err != nil {
-		t.Fatalf("create PostgreSQL entity relation: %v", err)
+		t.Fatalf("create entity relation: %v", err)
 	}
 	if relation.Version != 1 {
 		t.Fatalf("created entity relation version = %d, want 1", relation.Version)
@@ -318,7 +323,7 @@ func TestPostgresEntityRelationUsesVersionAndAdvancesCollectionRevision(t *testi
 		RelationType: "many_to_many", Name: "contains", Description: "order contains products",
 	})
 	if err != nil {
-		t.Fatalf("update PostgreSQL entity relation endpoints: %v", err)
+		t.Fatalf("update entity relation endpoints: %v", err)
 	}
 	if updated.Version != 2 || updated.SourceEntity != entities[1].ID || updated.TargetEntity != entities[2].ID ||
 		updated.RelationType != "many_to_many" || updated.Name != "contains" || updated.Description != "order contains products" {
@@ -370,7 +375,7 @@ func TestPostgresEntityRelationUsesVersionAndAdvancesCollectionRevision(t *testi
 		t.Fatalf("reopen relation endpoint fixture: %v", err)
 	}
 	if err := svc.Delete(relation.ID, tenantID, 2); err != nil {
-		t.Fatalf("delete PostgreSQL entity relation: %v", err)
+		t.Fatalf("delete entity relation: %v", err)
 	}
 	assertEntityModelRevision(t, tx, tenantID, 4)
 	if _, err := relationRepo.GetByID(relation.ID, tenantID); err == nil {
