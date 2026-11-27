@@ -466,8 +466,12 @@ done
 echo ""
 echo -e "${GREEN}基础设施就绪！${NC}"
 echo ""
-echo "访问地址与默认凭据："
-echo "  - PostgreSQL:  localhost:${POSTGRES_PORT}  db=${POSTGRES_DB:-addp}"
+echo "访问地址："
+if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then
+  echo "  - PostgreSQL:  localhost:${POSTGRES_PORT}  db=${POSTGRES_DB:-addp}"
+else
+  echo "  - MySQL:       ${ADDP_MYSQL_HOST}:${ADDP_MYSQL_PORT}（外置平台库）"
+fi
 echo "  - Redis:       localhost:${REDIS_PORT}"
 echo "  - FalkorDB:    127.0.0.1:${FALKORDB_PORT}  Ontology 私有 Infra"
 echo "  - MinIO API:   http://localhost:${MINIO_API_PORT}"
