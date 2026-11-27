@@ -123,14 +123,8 @@ func (n *PlatformAlertService) Save(ctx context.Context, id uint, input Platform
 		if count >= 50 {
 			return d, ErrLogInvalid
 		}
-		result := n.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&d)
-		if result.Error != nil {
-			return d, result.Error
-		}
-		if result.RowsAffected != 1 {
-			return d, ErrLogConflict
-		}
-		return d, nil
+		err = createPlatformAlertConfiguration(n.db.WithContext(ctx), &d)
+		return d, err
 	}
 	err = n.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var old models.PlatformAlertDestination

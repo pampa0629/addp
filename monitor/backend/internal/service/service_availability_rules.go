@@ -212,14 +212,7 @@ func (s *ServiceAvailabilityRuleService) Save(ctx context.Context, id, token str
 				return ErrLogConflict
 			}
 			result = models.ServiceAvailabilityRule{ID: uuid.NewString(), SubjectKey: group.ID, Version: 1, Name: name, DeploymentID: group.DeploymentID, ModuleName: group.ModuleName, Role: group.Role, RuntimeName: group.RuntimeName, ServiceAvailabilityPolicy: policy, Enabled: false, LastVerdict: string(PlatformAlertPaused), CreatedAt: at, UpdatedAt: at}
-			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&result)
-			if created.Error != nil {
-				return created.Error
-			}
-			if created.RowsAffected != 1 {
-				return ErrLogConflict
-			}
-			return nil
+			return createPlatformAlertConfiguration(tx, &result)
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&result).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound

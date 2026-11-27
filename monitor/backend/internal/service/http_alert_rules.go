@@ -120,14 +120,7 @@ func (s *HTTPAlertRuleService) Save(ctx context.Context, id, token string, input
 				return ErrLogConflict
 			}
 			result = models.HTTPAlertRule{ID: uuid.NewString(), SubjectKey: subjectKey, AnchorInstanceID: input.InstanceID, Version: 1, Name: name, ModuleName: ref.ModuleName, Role: ref.Role, Route: input.Route, Method: input.Method, MetricKey: input.MetricKey, HTTPThresholdPolicy: policy, Enabled: false, LastVerdict: string(PlatformAlertPaused), CreatedAt: now, UpdatedAt: now}
-			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&result)
-			if created.Error != nil {
-				return created.Error
-			}
-			if created.RowsAffected != 1 {
-				return ErrLogConflict
-			}
-			return nil
+			return createPlatformAlertConfiguration(tx, &result)
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&result).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound

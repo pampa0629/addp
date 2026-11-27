@@ -26,6 +26,22 @@ func TestInstalledActiveAlertUniqueness(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Run("monitoring target writes and budget", func(t *testing.T) { checkMonitoringTargetWrites(t, db) })
+	t.Run("duplicate notification destination", func(t *testing.T) {
+		notifications := &PlatformAlertService{db: db}
+		input := PlatformAlertDestinationInput{Name: uuid.NewString(), Channel: "email", Recipients: []string{"monitor@example.invalid"}, Categories: []string{models.PlatformAlertCategoryLog}, EventTypes: []string{"opened"}}
+		created, err := notifications.Save(t.Context(), 0, input)
+		if err != nil || created.ID == 0 {
+			t.Fatalf("initial notification destination: id=%d err=%v", created.ID, err)
+		}
+		input.Recipients = []string{"other@example.invalid"}
+		if _, err := notifications.Save(t.Context(), 0, input); !errors.Is(err, ErrLogConflict) {
+			t.Fatalf("duplicate notification destination: got %v, want conflict", err)
+		}
+		var stored models.PlatformAlertDestination
+		if err := db.First(&stored, created.ID).Error; err != nil || len(stored.Recipients) != 1 || stored.Recipients[0] != "monitor@example.invalid" || stored.Version != 1 {
+			t.Fatalf("original destination: %+v, %v", stored, err)
+		}
+	})
 	t.Run("platform notification and search", func(t *testing.T) { checkPlatformAlertNotificationAndSearch(t, db) })
 	t.Run("filesystem rule lookup uses exact mount dimensions", func(t *testing.T) {
 		node := uuid.NewString()

@@ -180,14 +180,7 @@ func (s *ResourceAlertRuleService) Save(ctx context.Context, id, token string, i
 				return ErrLogConflict
 			}
 			result = models.ResourceAlertRule{ID: uuid.NewString(), Version: 1, Name: name, NodeID: input.NodeID, MetricKey: input.MetricKey, Dimensions: input.Dimensions.Copy(), MountKey: models.ResourceMountKey(input.Dimensions), ResourcePressurePolicy: policy, Enabled: false, LastVerdict: string(PlatformAlertPaused), CreatedAt: now, UpdatedAt: now}
-			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&result)
-			if created.Error != nil {
-				return created.Error
-			}
-			if created.RowsAffected != 1 {
-				return ErrLogConflict
-			}
-			return nil
+			return createPlatformAlertConfiguration(tx, &result)
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&result).Error; errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrLogNotFound

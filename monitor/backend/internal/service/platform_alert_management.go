@@ -19,6 +19,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// Rules and notification destinations report a conflict when their unique key already exists.
+func createPlatformAlertConfiguration(db *gorm.DB, record any) error {
+	err := db.Create(record).Error
+	if err == nil {
+		return nil
+	}
+	if translator, ok := db.Dialector.(gorm.ErrorTranslator); ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey) {
+		return ErrLogConflict
+	}
+	return err
+}
+
 func validPlatformAlertCategory(category string) bool {
 	return category == models.PlatformAlertCategoryLog || category == models.PlatformAlertCategoryResource || category == models.PlatformAlertCategoryHTTP || category == models.PlatformAlertCategoryProcess || category == models.PlatformAlertCategoryAvailability
 }
