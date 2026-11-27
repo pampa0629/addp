@@ -764,6 +764,40 @@ SQL
   ) | tee "$1"
 }
 
+verify_system_log_receiver() {
+  local executable instance
+  executable=$("${app[@]}" exec -T system-backend stat -c '%u:%g:%a' /app/runtime-log)
+  [[ "$executable" == '0:0:755' ]]
+  instance=$("${app[@]}" exec -T system-backend sh -ec 'tr "\000" "\n" </proc/1/environ | sed -n "s/^ADDP_PROCESS_INSTANCE_ID=//p"')
+  [[ "$instance" =~ ^[a-f0-9-]{36}$ ]]
+  sudo -n python3 - "$PWD/logs/runtime" "$instance" "$executable" <<'PYRECEIVER' > "$1"
+import json
+from pathlib import Path
+import sys
+import time
+
+root = Path(sys.argv[1])
+owner = root.stat()
+assert owner.st_uid > 0, "the Hosted runtime-log receiver must use the non-root source owner"
+instance = sys.argv[2]
+path = root / "system" / instance / "status.json"
+deadline = time.monotonic() + 15
+while True:
+    if path.is_file():
+        stat = path.stat()
+        status = json.loads(path.read_text())
+        assert (stat.st_uid, stat.st_gid) == (owner.st_uid, owner.st_gid)
+        assert (status["module_name"], status["role"], status["instance_id"]) == ("system", "backend", instance)
+        assert status["write_failures"] == 0
+        if status["written"] > 0:
+            break
+    assert time.monotonic() < deadline, "System receiver did not write a startup record"
+    time.sleep(1)
+print(json.dumps(dict(instance_id=instance, executable=sys.argv[3], source_uid=owner.st_uid,
+                      source_gid=owner.st_gid, written=status["written"], write_failures=status["write_failures"])))
+PYRECEIVER
+}
+
 stage=runtime
 if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-system-diagnostic ]]; then
   full_startup_diagnostics
@@ -774,12 +808,14 @@ if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-system-diagnostic ]]; then
     if env | grep -q "^ADDP_DATABASE_DEPLOY_"; then exit 1; fi
   '
   verify_schema_versions "$artifacts/mysql-versions.txt"
+  verify_system_log_receiver "$artifacts/system-log-receiver.json"
   printf 'system_ready=passed\n' > "$artifacts/system-bootstrap.txt"
   stage=complete
   exit 0
 fi
 if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
   bash scripts/prod/health-check.sh | tee "$artifacts/initial-health.txt"
+  verify_system_log_receiver "$artifacts/system-log-receiver.json"
 fi
 inspect_runtime "$artifacts/runtime.json"
 verify_schema_versions "$artifacts/mysql-versions.txt"
@@ -809,6 +845,7 @@ if [[ "$ADDP_MYSQL_ONLINE_SUITE" == full-release ]]; then
   bash scripts/prod/start.sh
   stage=restart-verification
   bash scripts/prod/health-check.sh | tee "$artifacts/restarted-health.txt"
+  verify_system_log_receiver "$artifacts/restarted-system-log-receiver.json"
   inspect_runtime "$artifacts/restarted-runtime.json"
   verify_schema_versions "$artifacts/restarted-mysql-versions.txt"
   schema_digests > "$artifacts/restarted-mysql-schema-sha256.tsv"

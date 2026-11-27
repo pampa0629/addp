@@ -193,6 +193,8 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         self.assertEqual(len(parts), 5)
         for part in parts[1:]:
             compile(part.split("\nPY\n", 1)[0], str(entry), "exec")
+        receiver = entry.read_text().split("<<'PYRECEIVER'", 1)[1].split("\n", 1)[1]
+        compile(receiver.split("\nPYRECEIVER\n", 1)[0], str(entry), "exec")
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
