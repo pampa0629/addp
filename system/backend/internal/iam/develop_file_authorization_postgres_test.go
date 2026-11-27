@@ -247,7 +247,10 @@ func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gor
 	for _, trigger := range []string{"manual", "scheduled"} {
 		t.Run(trigger+" child uses current actor private scope and exact parent claim", func(t *testing.T) {
 			facts, id := newPending(t, false)
-			stamp := time.Now().UTC()
+			stamp, err := repo.internalTaskDatabaseTime(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
 			parentExpiry := stamp.Add(time.Minute)
 			ownerName, token, triggered := "orchestrator-fixture", uuid.NewString(), int(user.PrincipalID)
 			parent := execution.TaskExecution{ExecutionID: uuid.NewString(), TenantID: int(tenant.ID), Module: "orchestrator", Source: "orchestrator", TaskType: "orchestration", ExecutionBoundary: "bounded", Status: "running", TriggerType: trigger, Attempt: 1, MaxAttempts: 1, StartedAt: &stamp, LeaseOwner: &ownerName, LeaseToken: &token, LeaseExpiresAt: &parentExpiry, TriggeredBy: &triggered, ActorPrincipalID: &user.PrincipalID, ActorTenantMembershipID: &member.Membership.ID, IssuedAuthorizationVersion: &principal.AuthorizationVersion, ExecutionConfig: commonmodels.JSONMap{}}
@@ -285,8 +288,11 @@ func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gor
 			}
 			check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: authID, ExecutionID: id, TenantID: tenant.ID, ExpectedAttempt: 1, ScopeDigest: issued.ScopeDigest, Audit: serviceAudit}
 			admission, _, err := svc.Check(ctx, check)
-			if err != nil || admission == nil || admission.State != "ready" || admission.ExpiresAt.After(parentExpiry) {
-				t.Fatal("child admission", err)
+			if err != nil || admission == nil {
+				t.Fatalf("missing child admission: %v", err)
+			}
+			if admission.State != "ready" || admission.ExpiresAt.After(parentExpiry) {
+				t.Fatalf("child admission state=%s, expires_at=%s, parent_expires_at=%s", admission.State, admission.ExpiresAt, parentExpiry)
 			}
 			_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: facts.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "orchestrator"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "private-child-fixture", LeaseDuration: 10 * time.Second, RequireAuthorization: true}, nil)
 			if err != nil || lease == nil {
