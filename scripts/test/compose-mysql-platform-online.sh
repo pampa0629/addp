@@ -14,6 +14,7 @@ schemas=(system common meta gateway)
 case "${ADDP_MYSQL_ONLINE_SUITE:-gateway}" in
   gateway) ;;
   service-lineage) ADDP_DEPLOYMENT_MODULES=service; schemas+=(service) ;;
+  manager) ADDP_DEPLOYMENT_MODULES=manager; schemas+=(manager) ;;
   *) echo "unknown Hosted MySQL suite" >&2; exit 2 ;;
 esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -34,9 +35,12 @@ mkdir -p "$artifacts"
 work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
 export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
-fixture() { docker compose --env-file /dev/null -f "$work/compose.yml" "$@"; }
+fixture_compose=(docker compose --env-file /dev/null -f "$work/compose.yml")
+fixture() { "${fixture_compose[@]}" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
-if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then app+=(--profile module-service); fi
+if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
+  app+=(--profile "module-$ADDP_DEPLOYMENT_MODULES")
+fi
 infra_started=false
 release_started=false
 stage=fixture
@@ -111,14 +115,18 @@ lines = [line for line in env_file.read_text().splitlines() if line.partition("=
 lines.extend(f"{key}={shlex.quote(os.environ[key])}" for key in keys)
 env_file.write_text("\n".join(lines) + "\n")
 PY
-for key in REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD IAM_MFA_ENCRYPTION_KEY; do
+for key in REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD IAM_MFA_ENCRYPTION_KEY MEILISEARCH_MASTER_KEY MANAGER_SEARCH_REDIS_PASSWORD; do
   value=$(source .env && printf '%s' "${!key}")
   [[ -n "$value" ]]
   export "$key=$value"
 done
 unset value
-export MYSQL_FIXTURE_IMAGE
+export MYSQL_FIXTURE_IMAGE MEILISEARCH_FIXTURE_IMAGE
 MYSQL_FIXTURE_IMAGE=$(docker compose -f scripts/test/docker-compose.local-macos-ci.yml config --images mysql)
+if [[ "$ADDP_DEPLOYMENT_MODULES" == manager ]]; then
+  MEILISEARCH_FIXTURE_IMAGE=$(docker compose --env-file .env -f docker-compose.infra.yml config --images meilisearch)
+  fixture_compose+=(--profile manager)
+fi
 cat > "$work/compose.yml" <<'YAML'
 name: ${ADDP_MYSQL_FIXTURE_PROJECT:?}
 services:
@@ -156,6 +164,23 @@ services:
       interval: 3s
       timeout: 4s
       retries: 30
+  meilisearch:
+    profiles: [manager]
+    image: ${MEILISEARCH_FIXTURE_IMAGE:-getmeili/meilisearch}
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:-}
+      MEILI_NO_ANALYTICS: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+  manager-search-redis:
+    profiles: [manager]
+    extends:
+      file: ${GITHUB_WORKSPACE:?}/scripts/infra/manager-search-redis.yml
+      service: manager-search-redis
   registry:
     image: registry:2
     ports: ["127.0.0.1:5001:5000"]
@@ -193,11 +218,11 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON common.* TO 'platform_runtime'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON meta.* TO 'platform_runtime'@'%';
 GRANT SELECT,INSERT,UPDATE,DELETE ON gateway.* TO 'platform_runtime'@'%';
 SQL
-if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then
-  admin <<'SQL'
-CREATE DATABASE service;
-GRANT ALL ON service.* TO 'platform_deploy'@'%';
-GRANT SELECT,INSERT,UPDATE,DELETE ON service.* TO 'platform_runtime'@'%';
+if [[ -n "$ADDP_DEPLOYMENT_MODULES" ]]; then
+  admin <<SQL
+CREATE DATABASE $ADDP_DEPLOYMENT_MODULES;
+GRANT ALL ON $ADDP_DEPLOYMENT_MODULES.* TO 'platform_deploy'@'%';
+GRANT SELECT,INSERT,UPDATE,DELETE ON $ADDP_DEPLOYMENT_MODULES.* TO 'platform_runtime'@'%';
 SQL
 fi
 for schema in "${schemas[@]}"; do
@@ -229,9 +254,10 @@ containers = json.loads(subprocess.check_output(["docker", "inspect", *ids], tex
 services = {item["Config"]["Labels"]["com.docker.compose.service"]: item for item in containers}
 assert set(services) == set(manifest["projects"]["platform"])
 backends = ["system-backend", "meta-backend", "meta-worker", "gateway"]
-if os.environ["ADDP_DEPLOYMENT_MODULES"] == "service":
-    assert manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] == "service"
-    backends.append("service-backend")
+selected_module = os.environ["ADDP_DEPLOYMENT_MODULES"]
+if selected_module:
+    assert manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] == selected_module
+    backends.append(f"{selected_module}-backend")
 for name in backends:
     container = services[name]
     settings = dict(value.split("=", 1) for value in container["Config"]["Env"])
@@ -243,6 +269,8 @@ for name in backends:
     assert not any(key.startswith("ADDP_DATABASE_DEPLOY_") for key in settings), name
     assert container["Image"] == manifest["image_ids"][manifest["projects"]["platform"][name]], name
     assert container["State"]["Running"] and container["State"].get("Health", {}).get("Status", "none") != "unhealthy", name
+    if name == "manager-backend":
+        assert container["State"]["Health"]["Status"] == "healthy"
 Path(sys.argv[1], "runtime.json").write_text(json.dumps({"provider": "mysql", "verified_services": sorted(services)}))
 PY
 printf 'server_version=%s\n' "$(admin <<<'SELECT VERSION()')" | tee "$artifacts/mysql-versions.txt"
@@ -292,11 +320,11 @@ facts = json.loads(Path(sys.argv[1]).read_text())
 opener = build_opener(ProxyHandler({}))
 checks = {}
 
-def call(label, method, path, expected, body=None, token=None):
+def call(label, method, path, expected, body=None, token=None, module="system"):
     headers = {"Content-Type": "application/json", "Origin": origin}
     if token:
         headers["Authorization"] = "Bearer " + token
-    request = Request(origin + "/api/v1/system" + path, method=method, headers=headers,
+    request = Request(origin + f"/api/v1/{module}" + path, method=method, headers=headers,
                       data=json.dumps(body).encode() if body is not None else None)
     try:
         response = opener.open(request, timeout=10)
@@ -332,6 +360,23 @@ assert after["id"] == initial["id"] and after["local_account"] == initial["local
 Path(sys.argv[2], "gateway.json").write_text(json.dumps(checks))
 if os.environ["ADDP_DEPLOYMENT_MODULES"] == "service":
     Path(sys.argv[1]).with_name("lineage-reader.token").write_text(replacement)
+if os.environ["ADDP_DEPLOYMENT_MODULES"] == "manager":
+    permissions = identity["authorization"]["role_assignments"][0]["permissions"]
+    assert {"manager.data_item.read", "manager.search.execute"} <= set(permissions)
+    engines = call("manager_engines", "GET", "/engines", 200, token=replacement, module="manager")
+    assert isinstance(engines["data"], list)
+    term = "hosted_manager_mysql"
+    result = call("manager_search", "GET", f"/search?q={term}", 200, token=replacement, module="manager")
+    assert result["data"]["results"] == [] and result["data"]["exhausted"] is True
+    history = call("manager_search_history", "GET", "/search/history", 200, token=replacement, module="manager")
+    assert [item["query"] for item in history["data"]["items"]] == [term]
+    call("anonymous_manager_engines", "GET", "/engines", 401, module="manager")
+    Path(sys.argv[2], "manager.json").write_text(json.dumps({
+        "tenant_id": facts["tenant_id"], "principal_id": facts["principal_id"],
+        "visible_engines": len(engines["data"]), "search_term": term,
+        "search_history_round_trip": True,
+        "http_statuses": {label: status for label, status in checks.items() if "manager_" in label},
+    }))
 print(json.dumps(checks))
 PY
 if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then

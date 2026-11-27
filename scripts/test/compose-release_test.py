@@ -36,13 +36,20 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             compose = Path(directory, "compose.yml")
             compose.write_text(fixture)
-            config = json.loads(subprocess.check_output(
-                ["docker", "compose", "--env-file", "/dev/null", "-f", compose, "config", "--format", "json"],
-                env=env,
+            command = ["docker", "compose", "--env-file", "/dev/null", "-f", compose]
+            config = json.loads(subprocess.check_output([*command, "config", "--format", "json"], env=env))
+            manager = json.loads(subprocess.check_output(
+                [*command, "--profile", "manager", "config", "--format", "json"], env=env,
             ))
         self.assertEqual(config["name"], "hosted-infra-test")
         self.assertEqual(config["networks"]["default"]["name"], "hosted-net")
         self.assertIn("minio", config["services"])
+        self.assertNotIn("manager-search-redis", config["services"])
+        self.assertNotIn("meilisearch", config["services"])
+        self.assertIn("meilisearch", manager["services"])
+        mounts = manager["services"]["manager-search-redis"]["volumes"]
+        script = next(mount["source"] for mount in mounts if mount["target"] == "/addp/manager-search-redis.sh")
+        self.assertEqual(Path(script).resolve(), ROOT / "scripts/infra/manager-search-redis.sh")
 
     def test_hosted_selection_survives_production_env_loading(self):
         entry = ROOT / "scripts/test/compose-mysql-platform-online.sh"
@@ -79,7 +86,7 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("options: [gateway, service-lineage]", events)
+        self.assertIn("options: [gateway, service-lineage, manager]", events)
         probe = ROOT / "scripts/test/mysql-service-lineage-online.py"
         compile(probe.read_text(), str(probe), "exec")
         self.assertIn("\npermissions:\n  contents: read\n", workflow)
