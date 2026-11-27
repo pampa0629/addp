@@ -15,7 +15,7 @@
 3. 先运行 `bash scripts/test/online-host-gate.sh --check-only`，检查工具链、checkout、回环边界、环境权限及证据目录；不放宽准入绕过资源不足。
 4. 通过 workflow 按 suite 运行，核对构建身份、AuthContext、业务断言、addp.online-gate/v1 报告及成功/失败/中断清理，保存外部 Artifact。
 
-OceanBase 已通过[首次 Hosted Linux 完整验收](https://github.com/pampa0629/addp/actions/runs/45977146653/job/140431621980)，产品提交 `53cf3f87b`。Manager 在授权前、已有表、新增表、跨库同名表、撤权后五次预览的源端业务 SELECT 分别为 0／1／1／0／0。Transfer 读写为 5／2／0，Manager、Develop、Service 最终 6 行校验和一致。三项授权均已撤销，临时资源清理通过。[原始归档](https://github.com/pampa0629/addp/actions/runs/45977146653/artifacts/15189455589)。Develop 的 OceanBase SQL 逐表核权仍待单独验收。
+OceanBase 已通过[首次 Hosted Linux 完整验收](https://github.com/pampa0629/addp/actions/runs/45977146653/job/140431621980)，产品提交 `53cf3f87b`。Manager 在授权前、已有表、新增表、跨库同名表、撤权后五次预览的源端业务 SELECT 分别为 0／1／1／0／0。Transfer 读写为 5／2／0，Manager、Develop、Service 最终 6 行校验和一致。三项授权均已撤销，临时资源清理通过。[原始归档](https://github.com/pampa0629/addp/actions/runs/45977146653/artifacts/15189455589)。Develop 原生 SQL 逐表核权已在固定提交 `71bb16a03` 验收通过，五个独立执行的源端业务 SELECT 为 1／1／0／0／0。[Hosted 作业](https://github.com/pampa0629/addp/actions/runs/45985596821/job/140460286309) · [原始归档](https://github.com/pampa0629/addp/actions/runs/45985596821/artifacts/15192446474)。
 
 ## 三、待取得专用环境报告的范围
 
