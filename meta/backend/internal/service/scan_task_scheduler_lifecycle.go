@@ -16,7 +16,7 @@ func (s *ScanTaskScheduler) Start(ctx context.Context) error {
 
 	s.taskService.log.Info("启动扫描任务调度器")
 
-	if err := s.ensureScheduledTaskNextRuns(); err != nil {
+	if err := s.ensureScheduledTaskNextRuns(ctx); err != nil {
 		s.taskService.log.Warn("初始化定时任务 next_run_at 失败", "error", err)
 	}
 

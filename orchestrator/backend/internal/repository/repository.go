@@ -80,11 +80,11 @@ func (r *OrchestrationRepository) ListMissingNextRun(ctx context.Context) ([]mod
 	return orchs, err
 }
 
-func (r *OrchestrationRepository) UpdateNextRunAt(ctx context.Context, id uint, nextRunAt *time.Time) error {
+func (r *OrchestrationRepository) InitializeNextRunAt(ctx context.Context, task models.Orchestration, nextRunAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&models.Orchestration{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error
+		Where("id = ? AND tenant_id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NULL", task.ID, task.TenantID, true, task.Schedule).
+		Update("next_run_at", nextRunAt).Error
 }
 
 func (r *OrchestrationRepository) ListDueIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {

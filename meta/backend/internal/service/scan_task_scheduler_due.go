@@ -13,9 +13,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (s *ScanTaskScheduler) ensureScheduledTaskNextRuns() error {
+func (s *ScanTaskScheduler) ensureScheduledTaskNextRuns(ctx context.Context) error {
 	var tasks []models.ScanTask
-	if err := s.taskService.db.Where("enabled = ? AND schedule <> '' AND next_run_at IS NULL", true).Find(&tasks).Error; err != nil {
+	if err := s.taskService.db.WithContext(ctx).Where("enabled = ? AND schedule <> '' AND next_run_at IS NULL", true).Find(&tasks).Error; err != nil {
 		return err
 	}
 
@@ -26,11 +26,18 @@ func (s *ScanTaskScheduler) ensureScheduledTaskNextRuns() error {
 		if next == nil {
 			continue
 		}
-		if err := s.taskService.db.Model(&models.ScanTask{}).Where("id = ?", task.ID).Update("next_run_at", *next).Error; err != nil {
+		if err := s.initializeNextRunAt(ctx, task, *next); err != nil {
 			s.taskService.log.Warn("初始化定时任务 next_run_at 失败", "task_id", task.ID, "error", err)
 		}
 	}
 	return nil
+}
+
+func (s *ScanTaskScheduler) initializeNextRunAt(ctx context.Context, task models.ScanTask, next time.Time) error {
+	return s.taskService.db.WithContext(ctx).
+		Model(&models.ScanTask{}).
+		Where("id = ? AND tenant_id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NULL", task.ID, task.TenantID, true, task.Schedule).
+		Update("next_run_at", next).Error
 }
 
 func (s *ScanTaskScheduler) scheduledLoop(ctx context.Context) {

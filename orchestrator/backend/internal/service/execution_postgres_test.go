@@ -75,6 +75,71 @@ func TestIntegrationPostgresExecutionReliability(t *testing.T) {
 
 func checkOrchestratorExecutionReliability(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	t.Run("startup_backfill_preserves_newer_schedule", func(t *testing.T) {
+		ctx := context.Background()
+		ref, hash, authorized := uuid.New(), strings.Repeat("a", 64), time.Now().UTC()
+		subject, principal, membership, version := int64(22), int64(9), int64(19), int64(1)
+		task := models.Orchestration{
+			TenantID: 999999, Name: "schedule-backfill-" + uuid.NewString(), Schedule: "0 3 * * *", Enabled: true,
+			Steps: models.Steps{}, EditorLayout: commonModels.JSONMap{},
+			AuthorizationRef: &ref, AuthorizationSubjectID: &subject, AuthorizationDefinitionHash: &hash,
+			AuthorizationPrincipalID: &principal, AuthorizationMembershipID: &membership, AuthorizationVersion: &version, AuthorizedAt: &authorized,
+		}
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := db.Unscoped().Delete(&task).Error; err != nil {
+				t.Error(err)
+			}
+		})
+		due := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
+		later := due.Add(time.Hour)
+		// Both replicas read this version while its next run is still missing.
+		replicaA, replicaB := repository.NewOrchestrationRepository(db).InitializeNextRunAt, repository.NewOrchestrationRepository(db).InitializeNextRunAt
+		assertNext := func(want *time.Time) {
+			t.Helper()
+			var current models.Orchestration
+			if err := db.First(&current, task.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			got := current.NextRunAt
+			if (want == nil && got != nil) || (want != nil && (got == nil || !got.Equal(*want))) {
+				t.Fatalf("next_run_at = %v, want %v", got, want)
+			}
+		}
+		update := func(values map[string]interface{}) {
+			t.Helper()
+			if err := db.Model(&models.Orchestration{}).Where("id = ?", task.ID).Updates(values).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := replicaA(ctx, task, due); err != nil {
+			t.Fatal(err)
+		}
+		if err := replicaB(ctx, task, later); err != nil {
+			t.Fatal(err)
+		}
+		assertNext(&due)
+
+		// A late initializer must preserve a position already advanced by a claim.
+		update(map[string]interface{}{"next_run_at": later})
+		if err := replicaB(ctx, task, due); err != nil {
+			t.Fatal(err)
+		}
+		assertNext(&later)
+
+		update(map[string]interface{}{"enabled": false, "next_run_at": nil})
+		if err := replicaB(ctx, task, due); err != nil {
+			t.Fatal(err)
+		}
+		assertNext(nil)
+		update(map[string]interface{}{"enabled": true, "schedule": "0 7 * * *", "next_run_at": nil})
+		if err := replicaB(ctx, task, due); err != nil {
+			t.Fatal(err)
+		}
+		assertNext(nil)
+	})
 	s := NewExecutionService(db)
 	ctx := context.Background()
 	actor := ExecutionActor{PrincipalID: 9, TenantMembershipID: 19, AuthorizationVersion: 3}

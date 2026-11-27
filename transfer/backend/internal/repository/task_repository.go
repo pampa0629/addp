@@ -415,11 +415,11 @@ func (r *TaskRepository) ListScheduledTasksMissingNextRun(ctx context.Context) (
 	return tasks, err
 }
 
-func (r *TaskRepository) UpdateNextRunAt(ctx context.Context, id uint, nextRunAt *time.Time) error {
+func (r *TaskRepository) InitializeNextRunAt(ctx context.Context, task models.TransferTask, nextRunAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&models.TransferTask{}).
-		Where("id = ?", id).
-		Updates(map[string]interface{}{"next_run_at": nextRunAt}).Error
+		Where("id = ? AND tenant_id = ? AND enabled = ? AND schedule = ? AND next_run_at IS NULL", task.ID, task.TenantID, true, task.Schedule).
+		Update("next_run_at", nextRunAt).Error
 }
 
 func (r *TaskRepository) ListDueScheduledTaskIDs(ctx context.Context, now time.Time, limit int) ([]uint, error) {

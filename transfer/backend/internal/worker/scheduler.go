@@ -90,7 +90,10 @@ func (s *Scheduler) ensureScheduledTaskNextRuns(ctx context.Context) error {
 			log.Printf("⚠️  计算定时任务下次执行时间失败 - TaskID: %d, Error: %v", task.ID, err)
 			continue
 		}
-		if err := s.taskRepo.UpdateNextRunAt(ctx, task.ID, next); err != nil {
+		if next == nil {
+			continue
+		}
+		if err := s.taskRepo.InitializeNextRunAt(ctx, task, *next); err != nil {
 			log.Printf("⚠️  初始化定时任务 next_run_at 失败 - TaskID: %d, Error: %v", task.ID, err)
 		}
 	}

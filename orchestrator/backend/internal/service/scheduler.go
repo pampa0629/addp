@@ -79,11 +79,15 @@ func (s *Scheduler) ensureNextRuns(ctx context.Context) error {
 	now := time.Now()
 	for i := range orchestrations {
 		orch := orchestrations[i]
-		if err := ApplyOrchestrationSchedule(&orch, now); err != nil {
+		planned := orch
+		if err := ApplyOrchestrationSchedule(&planned, now); err != nil {
 			s.log.Warn("calculate orchestration next_run_at failed", "orchestration_id", orch.ID, "error", err)
 			continue
 		}
-		if err := s.orchRepo.UpdateNextRunAt(ctx, orch.ID, orch.NextRunAt); err != nil {
+		if planned.NextRunAt == nil {
+			continue
+		}
+		if err := s.orchRepo.InitializeNextRunAt(ctx, orch, *planned.NextRunAt); err != nil {
 			s.log.Warn("update orchestration next_run_at failed", "orchestration_id", orch.ID, "error", err)
 		}
 	}
