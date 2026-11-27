@@ -15,7 +15,7 @@ import (
 )
 
 const mysqlIAMFoundationOwner = "system_iam_foundation"
-const mysqlIAMFoundationVersion int64 = 24
+const mysqlIAMFoundationVersion int64 = 25
 
 //go:embed mysql_iam/*.sql mysql_module_registry/*.sql mysql_engine_catalog/*.sql mysql_target_locks/*.sql mysql_source_grant_catalog/*.sql mysql_engine_delegations/*.sql mysql_cleanup/*.sql mysql_execution_authorization/*.sql mysql_search_authorization/*.sql
 var mysqlIAMFoundationSQL embed.FS
@@ -120,7 +120,7 @@ func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 }
 
 const mysqlExecutionAuthorizationOwner = "system_execution_authorization"
-const mysqlExecutionAuthorizationVersion = 4
+const mysqlExecutionAuthorizationVersion = 5
 
 //go:embed mysql_execution_authorization_update_v1.sql
 var executionAuthorizationUpdateV1 string
@@ -136,6 +136,12 @@ var developFileRootDeadline string
 
 //go:embed mysql_develop_file_guard.sql.tmpl
 var developFileGuardSQL string
+
+//go:embed mysql_notebook_execution_insert.sql
+var notebookExecutionInsert string
+
+//go:embed mysql_notebook_execution_update.sql
+var notebookExecutionUpdate string
 
 //go:embed mysql_execution_authorization_scope.sql
 var executionAuthorizationScope string
@@ -271,7 +277,7 @@ func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error 
 		}
 		triggers = append(triggers, sql.String())
 	}
-	triggers = append(triggers, developFilePaths, developFileRootDeadline)
+	triggers = append(triggers, developFilePaths, developFileRootDeadline, notebookExecutionInsert, notebookExecutionUpdate)
 	var old bool
 	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='execution_authorization_validate_update')").Row().Scan(&old); err != nil {
 		return err
@@ -294,12 +300,14 @@ func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error 
 	}
 	var version string
 	if err := conn.Raw(`SELECT constraint_name FROM information_schema.table_constraints WHERE constraint_schema=DATABASE()
-        AND table_name='execution_authorizations' AND constraint_name IN ('ck_execution_authorization_generic_scope','ck_execution_authorization_scope_v2','ck_execution_authorization_scope_v3')`).Row().Scan(&version); err != nil {
+        AND table_name='execution_authorizations' AND constraint_name IN ('ck_execution_authorization_generic_scope','ck_execution_authorization_scope_v2','ck_execution_authorization_scope_v3','ck_execution_authorization_scope_v5')`).Row().Scan(&version); err != nil {
 		return err
 	}
 	switch version {
-	case "ck_execution_authorization_scope_v3":
+	case "ck_execution_authorization_scope_v5":
 		return nil
+	case "ck_execution_authorization_scope_v3":
+		return conn.Exec("ALTER TABLE execution_authorizations DROP CHECK ck_execution_authorization_scope_v3, " + executionAuthorizationScope).Error
 	case "ck_execution_authorization_scope_v2":
 		return conn.Exec("ALTER TABLE execution_authorizations DROP CHECK ck_execution_authorization_scope_v2, " + executionAuthorizationScope).Error
 	default:

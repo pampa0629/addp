@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"database/sql"
 	"encoding/json"
 	"testing"
 
@@ -27,18 +28,21 @@ func insertEngineFixture(
 	if err != nil {
 		t.Fatalf("marshal %s engine connection: %v", engineType, err)
 	}
-	var engineID int64
-	if err := db.Raw(`
-		INSERT INTO system.engines (
-			tenant_id, name, engine_type, connection_info, identity_key,
-			lifecycle_state, connection_status, is_builtin
-		) VALUES (?, ?, ?, CAST(? AS jsonb), CAST(? AS jsonb), 'active', 'online', ?)
-		RETURNING id
-	`, tenantID, name, engineType, string(connectionJSON), identityKey, isBuiltin).Scan(&engineID).Error; err != nil {
+	row := struct {
+		ID                                                                              int64
+		TenantID                                                                        sql.NullInt64
+		Name, EngineType, ConnectionInfo, IdentityKey, LifecycleState, ConnectionStatus string
+		IsBuiltin                                                                       bool
+	}{Name: name, EngineType: engineType, ConnectionInfo: string(connectionJSON), IdentityKey: string(identityKey),
+		LifecycleState: "active", ConnectionStatus: "online", IsBuiltin: isBuiltin}
+	if err := row.TenantID.Scan(tenantID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table("system.engines").Create(&row).Error; err != nil {
 		t.Fatalf("insert %s engine fixture: %v", engineType, err)
 	}
-	if engineID <= 0 {
-		t.Fatalf("insert %s engine fixture returned invalid ID %d", engineType, engineID)
+	if row.ID <= 0 {
+		t.Fatalf("insert %s engine fixture returned invalid ID %d", engineType, row.ID)
 	}
-	return engineID
+	return row.ID
 }

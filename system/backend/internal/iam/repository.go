@@ -633,9 +633,7 @@ func (r *Repository) CreateNotebookSessionAuthorization(
 		return fmt.Errorf("%w: notebook session authorization is required", commonapi.ErrBadRequest)
 	}
 	err := r.db.WithContext(ctx).Create(authorization).Error
-	var postgresError *pgconn.PgError
-	if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
-		postgresError.ConstraintName == "notebook_session_authorizations_session_id_key" {
+	if translator, ok := r.db.Dialector.(gorm.ErrorTranslator); err != nil && ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey) {
 		return ErrNotebookSessionAuthorizationConflict
 	}
 	return wrapRepositoryError(err)

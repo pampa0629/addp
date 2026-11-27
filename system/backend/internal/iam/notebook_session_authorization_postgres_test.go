@@ -3,7 +3,10 @@ package iam
 import (
 	"context"
 	"errors"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +38,27 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("apply IAM migrations: %v", err)
 	}
 
+	exerciseNotebookSessionAuthorization(t, ctx, db)
+}
+
+func TestNotebookSessionAuthorizationServiceAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_NOTEBOOK_AUTHORIZATION") != "1" {
+		t.Skip("requires isolated System MySQL installation")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(database.Config{Schema: "system"}, "system", &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	exerciseNotebookSessionAuthorization(t, t.Context(), db)
+}
+
+func exerciseNotebookSessionAuthorization(t *testing.T, ctx context.Context, db *gorm.DB) {
+	t.Helper()
 	repository := NewRepository(db)
 	tokenService, err := NewTokenFamilyService(repository, BrowserSessionConfig{
 		ResourceTicketOwners: []string{"manager"},
@@ -55,7 +79,7 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	identityService := NewIdentityService(repository, nil)
-	membershipService := NewTenantMembershipService(repository, testFixtureDatabaseClock(t, db))
+	membershipService := NewTenantMembershipService(repository, nil)
 	issueAudit := AuditMetadata{RequestID: stringPointer("notebook-catalog-authorization-postgres")}
 	user := createContextSelectionUser(t, ctx, identityService, "notebook-catalog-user", issueAudit)
 	tenant := createContextSelectionTenant(t, ctx, membershipService, "notebook-catalog", issueAudit)
@@ -109,6 +133,9 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		logCredentialValidationBoundaries(t, err)
 		t.Fatalf("Issue() result=%#v error=%v", issued, err)
 	}
+	if duplicate, err := service.Issue(ctx, IssueNotebookSessionAuthorizationInput{SourceAccessToken: accessToken, SessionID: sessionID, TaskID: 42, ExpiresIn: 10 * time.Minute, Audit: issueAudit}); duplicate != nil || !errors.Is(err, ErrNotebookSessionAuthorizationConflict) {
+		t.Fatalf("duplicate Notebook session: %v", err)
+	}
 	authorized, err := service.Authorize(ctx, serviceActor(issued.ID, sessionID))
 	if err != nil || authorized.TenantID != tenant.ID || authorized.TaskID != 42 {
 		t.Fatalf("Authorize() result=%#v error=%v", authorized, err)
@@ -137,6 +164,18 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
 	}); err != nil {
 		t.Fatalf("consume Notebook execution authorization: %v", err)
+	}
+
+	for _, boundary := range []struct {
+		engine int64
+		effect string
+	}{{notebookEngineID, "write"}, {notebookEngineID + 1, "read"}} {
+		got, err := executionService.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{AuthorizationID: derived.AuthorizationID,
+			ExecutionID: executionID, EngineID: boundary.engine, RequiredEffects: []string{boundary.effect}, ServicePrincipalID: developPrincipalID,
+			ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit})
+		if got != nil || !errors.Is(err, ErrExecutionAuthorizationPermissionDenied) {
+			t.Fatalf("out-of-scope Notebook engine access: %v", err)
+		}
 	}
 
 	var source AccessToken
@@ -197,13 +236,6 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("derive second Notebook execution authorization: %v", err)
 	}
-	if err := db.Model(&Principal{}).Where("id = ?", user.PrincipalID).
-		Update("authorization_version", gorm.Expr("authorization_version + 1")).Error; err != nil {
-		t.Fatalf("advance User authorization version: %v", err)
-	}
-	if _, err := service.Authorize(ctx, serviceActor(second.ID, secondSessionID)); !errors.Is(err, ErrNotebookSessionAuthorizationForbidden) {
-		t.Fatalf("authorization version change error = %v", err)
-	}
 
 	wrongTenantAudit := consumeAudit
 	wrongTenant := createContextSelectionTenant(t, ctx, membershipService, "notebook-catalog-other", issueAudit)
@@ -216,6 +248,10 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 	}
 	if err := service.Revoke(ctx, revokeInput); err != nil {
 		t.Fatalf("cross-Tenant idempotent Revoke() error=%v", err)
+	}
+	var unaffected NotebookSessionAuthorization
+	if err := db.Where("id=?", second.ID).Take(&unaffected).Error; err != nil || unaffected.RevokedAt != nil {
+		t.Fatal("foreign tenant changed original revocation", err)
 	}
 	revokeInput.TenantID = tenant.ID
 	revokeInput.Audit = consumeAudit
@@ -232,15 +268,40 @@ func TestNotebookSessionAuthorizationServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("repeated Revoke() error=%v", err)
 	}
 
-	var issuedAuditCount, consumedAuditCount, revokedAuditCount, leakedTokenCount int64
+	if result, err := executionService.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{
+		AuthorizationID: secondDerived.AuthorizationID, ExecutionID: secondExecutionID, EngineID: notebookEngineID,
+		RequiredEffects: []string{"read"}, ServicePrincipalID: developPrincipalID, ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: consumeAudit,
+	}); result != nil || !errors.Is(err, ErrExecutionAuthorizationUnavailable) {
+		t.Fatalf("explicitly revoked Notebook execution: %v", err)
+	}
+	thirdSessionID := uuid.New()
+	third, err := service.Issue(ctx, IssueNotebookSessionAuthorizationInput{SourceAccessToken: newSession(), SessionID: thirdSessionID, TaskID: 44, ExpiresIn: 5 * time.Minute, Audit: issueAudit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&Principal{}).Where("id = ?", user.PrincipalID).
+		Update("authorization_version", gorm.Expr("authorization_version + 1")).Error; err != nil {
+		t.Fatalf("advance User authorization version: %v", err)
+	}
+	if _, err := service.Authorize(ctx, serviceActor(third.ID, thirdSessionID)); !errors.Is(err, ErrNotebookSessionAuthorizationForbidden) {
+		t.Fatalf("authorization version change error = %v", err)
+	}
+
+	var issuedAuditCount, consumedAuditCount, revokedAuditCount int64
 	db.Table("system.audit_logs").Where("event_name = ?", "iam.notebook_session_authorization.issued").Count(&issuedAuditCount)
 	db.Table("system.audit_logs").Where("event_name = ?", "iam.notebook_session_authorization.consumed").Count(&consumedAuditCount)
 	db.Table("system.audit_logs").Where("event_name = ?", "iam.notebook_session_authorization.revoked").Count(&revokedAuditCount)
-	db.Table("system.audit_logs").Where("event_name LIKE ? AND details::text LIKE ?",
-		"iam.notebook_session_authorization.%", "%addp_at_%").Count(&leakedTokenCount)
-	if issuedAuditCount != 2 || consumedAuditCount != 2 || revokedAuditCount != 3 || leakedTokenCount != 0 {
-		t.Fatalf("audit issued=%d consumed=%d revoked=%d leaked=%d",
-			issuedAuditCount, consumedAuditCount, revokedAuditCount, leakedTokenCount)
+	var details []string
+	if err := db.Table("system.audit_logs").Where("event_name LIKE ?", "iam.notebook_session_authorization.%").Pluck("details", &details).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range details {
+		if strings.Contains(record, "addp_at_") {
+			t.Fatal("Notebook audit contained an access token")
+		}
+	}
+	if issuedAuditCount != 3 || consumedAuditCount != 2 || revokedAuditCount != 3 {
+		t.Fatalf("audit issued=%d consumed=%d revoked=%d", issuedAuditCount, consumedAuditCount, revokedAuditCount)
 	}
 }
 

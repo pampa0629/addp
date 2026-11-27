@@ -676,20 +676,20 @@ func (ExecutionAuthorization) TableName() string {
 // for one interactive Notebook Session. It is a database reference, not a
 // bearer credential.
 type NotebookSessionAuthorization struct {
-	ID                         uuid.UUID      `gorm:"column:id;type:uuid;primaryKey"`
-	SessionID                  uuid.UUID      `gorm:"column:session_id;type:uuid;not null;unique"`
-	TaskID                     int64          `gorm:"column:task_id;not null"`
-	ActorPrincipalID           int64          `gorm:"column:actor_principal_id;not null"`
-	TenantID                   int64          `gorm:"column:tenant_id;not null"`
-	TenantMembershipID         int64          `gorm:"column:tenant_membership_id;not null"`
-	TokenFamilyID              int64          `gorm:"column:token_family_id;not null"`
-	IssuedAuthorizationVersion int64          `gorm:"column:issued_authorization_version;not null"`
-	Audience                   string         `gorm:"column:audience;not null"`
-	Operations                 pq.StringArray `gorm:"column:operations;type:text[];not null"`
-	ExpiresAt                  time.Time      `gorm:"column:expires_at;not null"`
-	RevokedAt                  *time.Time     `gorm:"column:revoked_at"`
-	RevokedReason              *string        `gorm:"column:revoked_reason"`
-	CreatedAt                  time.Time      `gorm:"column:created_at;autoCreateTime"`
+	ID                         uuid.UUID           `gorm:"column:id;type:uuid;primaryKey"`
+	SessionID                  uuid.UUID           `gorm:"column:session_id;type:uuid;not null;unique"`
+	TaskID                     int64               `gorm:"column:task_id;not null"`
+	ActorPrincipalID           int64               `gorm:"column:actor_principal_id;not null"`
+	TenantID                   int64               `gorm:"column:tenant_id;not null"`
+	TenantMembershipID         int64               `gorm:"column:tenant_membership_id;not null"`
+	TokenFamilyID              int64               `gorm:"column:token_family_id;not null"`
+	IssuedAuthorizationVersion int64               `gorm:"column:issued_authorization_version;not null"`
+	Audience                   string              `gorm:"column:audience;not null"`
+	Operations                 dbtypes.StringArray `gorm:"column:operations;not null"`
+	ExpiresAt                  time.Time           `gorm:"column:expires_at;not null"`
+	RevokedAt                  *time.Time          `gorm:"column:revoked_at"`
+	RevokedReason              *string             `gorm:"column:revoked_reason"`
+	CreatedAt                  time.Time           `gorm:"column:created_at;autoCreateTime"`
 }
 
 func (NotebookSessionAuthorization) TableName() string {

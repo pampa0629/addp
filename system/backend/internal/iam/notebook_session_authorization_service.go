@@ -7,8 +7,8 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 )
 
 const (
@@ -155,7 +155,7 @@ func (s *NotebookSessionAuthorizationService) Issue(
 			TenantMembershipID: *lockedSnapshot.TenantMembershipID, TokenFamilyID: family.ID,
 			IssuedAuthorizationVersion: principal.AuthorizationVersion,
 			Audience:                   notebookSessionAudience,
-			Operations:                 pq.StringArray{notebookEngineCatalogOperation, notebookExecutionAccessOperation},
+			Operations:                 dbtypes.StringArray{notebookEngineCatalogOperation, notebookExecutionAccessOperation},
 			ExpiresAt:                  expiresAt, CreatedAt: now,
 		}
 		if err := tx.CreateNotebookSessionAuthorization(ctx, authorization); err != nil {
