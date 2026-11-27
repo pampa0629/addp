@@ -31,6 +31,12 @@ func (a *fakeSharingFulfillmentAuthority) Close(_ context.Context, tenant int64,
 func seedSharingRecovery(t *testing.T) (*gorm.DB, models.Entry, *models.FulfillmentCheck, sharingFulfillmentBinding) {
 	t.Helper()
 	db := openSharingPreparationTestDB(t)
+	entry, check, binding := prepareRecoveryCheck(t, db)
+	return db, entry, check, binding
+}
+
+func prepareRecoveryCheck(t *testing.T, db *gorm.DB) (models.Entry, *models.FulfillmentCheck, sharingFulfillmentBinding) {
+	t.Helper()
 	entry, input := seedSharingEntry(t, db)
 	input.ExpiryMode, input.ExpiresAt = authorization.SharingExpiryUntilRevoked, nil
 	s := NewEntryService(db, nil, &fakeSystemReferenceResolver{}).WithSharingTargetResolver(&fakeSharingTargetResolver{})
@@ -54,7 +60,7 @@ func seedSharingRecovery(t *testing.T) (*gorm.DB, models.Entry, *models.Fulfillm
 	if err != nil {
 		t.Fatal(err)
 	}
-	return db, entry, check, binding
+	return entry, check, binding
 }
 
 func TestSharingFulfillmentRecoveryUsesOriginalResultAndPreservesResolution(t *testing.T) {

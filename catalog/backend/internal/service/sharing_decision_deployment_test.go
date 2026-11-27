@@ -23,4 +23,5 @@ func TestInstalledCatalogSharingDecision(t *testing.T) {
 	}
 	t.Cleanup(func() { pool.Close() })
 	exerciseSharingDecisionActions(t, db)
+	t.Run("concurrent_recovery_after_lost_receipt", func(t *testing.T) { exerciseConcurrentReceiptRecovery(t, db) })
 }

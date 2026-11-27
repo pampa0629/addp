@@ -46,6 +46,7 @@ func TestPostgresSharingFulfillmentRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	exerciseSharingFulfillmentPreparation(t, db)
+	t.Run("concurrent_recovery_after_lost_receipt", func(t *testing.T) { exerciseConcurrentReceiptRecovery(t, db) })
 	exerciseSharingFulfillmentHistory(t, db)
 	exerciseSharingBusinessReview(t, db)
 	exerciseCatalogAutomaticIssuance(t, db)
