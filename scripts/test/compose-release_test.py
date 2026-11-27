@@ -126,6 +126,17 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(develop.SuiteError):
                 develop.verify_pending(waiting | value, "7")
 
+    def test_develop_fixture_guard_does_not_select_native_mode_for_production(self):
+        entry = (ROOT / "scripts/test/compose-mysql-platform-online.sh").read_text()
+        fixture = re.search(r"(?m)^develop_file_fixture\(\) \{\n[^}]*^\}", entry).group()
+        subprocess.run(["bash", "-ec", fixture + r'''
+            python3() { [[ "$ADDP_ONLINE_HOST" == 1 && "$ADDP_ONLINE_HOSTED" == 1 ]]; }
+            unset ADDP_ONLINE_HOST ADDP_ONLINE_HOSTED
+            develop_file_fixture stop-nfs
+            [[ -z "${ADDP_ONLINE_HOST+x}${ADDP_ONLINE_HOSTED+x}" ]]
+        '''], check=True)
+        self.assertNotRegex(entry, r"(?m)^\s*export .*\bADDP_ONLINE_(?:HOST|HOSTED)=")
+
     def test_develop_nfs_exports_only_to_the_owned_bridge_and_loopback(self):
         nfs = importlib.import_module("scripts.utils.online_nfs_fixture")
         network = {"Name": "fixture-bridge", "Driver": "bridge", "Scope": "local",

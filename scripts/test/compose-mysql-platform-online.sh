@@ -37,10 +37,14 @@ work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
 export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
 if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
-  export ADDP_ONLINE_HOST=1 ADDP_ONLINE_HOSTED=1
   export ADDP_ONLINE_TEST_RUN_ID="develop-file-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
   export GEOPYTHON_FIXTURE_TAG="hosted-${GITHUB_SHA}"
 fi
+develop_file_fixture() {
+  # These flags select the fixture's Hosted guard. The limited release uses
+  # the production environment it initialized in the disposable checkout.
+  ADDP_ONLINE_HOST=1 ADDP_ONLINE_HOSTED=1 python3 -m scripts.test.mysql-develop-file-online "$@"
+}
 fixture_compose=(docker compose --env-file /dev/null -f "$work/compose.yml")
 fixture() { "${fixture_compose[@]}" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
@@ -83,7 +87,7 @@ for message in sorted(messages):
     fixture down --volumes --remove-orphans || cleanup_status=failed
   fi
   if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
-    python3 -m scripts.test.mysql-develop-file-online stop-nfs > "$artifacts/develop-nfs-cleanup.json" || cleanup_status=failed
+    develop_file_fixture stop-nfs > "$artifacts/develop-nfs-cleanup.json" || cleanup_status=failed
   fi
   for project in "$ADDP_DEPLOYMENT_PROJECT" "$ADDP_MYSQL_FIXTURE_PROJECT"; do
     remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || cleanup_status=failed
@@ -478,6 +482,6 @@ if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
   export ADDP_TEST_MYSQL_CONTAINER="$(fixture ps -q mysql)"
   export ADDP_TEST_GEOPYTHON_CONTAINER="$(fixture ps -q geopython-workflow-engine)"
   export ADDP_TEST_DEVELOP_CONTAINER="$("${app[@]}" ps -q develop-backend)"
-  python3 -m scripts.test.mysql-develop-file-online run "$artifacts"
+  develop_file_fixture run "$artifacts"
 fi
 stage=complete
