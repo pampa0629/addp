@@ -36,10 +36,10 @@ func (s *TaskService) prepareObjectExecution(ctx context.Context, task *models.T
 	if err != nil || loc.Type != resourcetree.TypeObject {
 		return false, nil
 	}
-	resolver := planner.BindEngineResolver(s.engineResolver, task.TenantID)
-	if resolver == nil {
+	if s.engineDescriptor == nil {
 		return false, ErrTaskAuthorizationUnavailable
 	}
+	resolver := planner.DescriptorEngineResolver{Context: ctx, TenantID: task.TenantID, Lookup: s.engineDescriptor}
 	engine, err := resolver.ResolveEngine(planner.EngineRef{ID: loc.EngineID})
 	if err != nil {
 		return false, err
@@ -85,8 +85,7 @@ func (s *TaskService) prepareObjectExecution(ctx context.Context, task *models.T
 	if err != nil {
 		return false, denied
 	}
-	target, err := resolver.ResolveEngine(planner.EngineRef{ID: scope.TargetEngineID, Type: "postgresql"})
-	if err != nil || target.Type != "postgresql" {
+	if _, err := resolver.ResolveEngine(planner.EngineRef{ID: scope.TargetEngineID, Type: "postgresql"}); err != nil {
 		return false, denied
 	}
 	record.ExecutionConfig = frozen
