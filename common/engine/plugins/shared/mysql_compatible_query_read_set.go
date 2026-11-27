@@ -89,16 +89,16 @@ func (p MySQLCompatibleQueryProvenance) ResolveReadSet(
 	return p.resolveReadSet(ctx, req, defaultDatabase, references, &mysqlCompatibleDatabaseReadCatalog{db: db})
 }
 
-// ResolveTransactionReadSet resolves a prepared query against its actual
-// execution session. The native provider retains the table locks and performs
-// authorization before executing the query.
-func (p MySQLCompatibleQueryProvenance) ResolveTransactionReadSet(ctx context.Context, tx *sql.Tx, req plugin.QueryRequest) (*plugin.QueryReadSet, error) {
+// ResolveSessionReadSet resolves a prepared query against its actual
+// execution session. The provider is responsible for the table identity
+// boundary and the authorization check before opening the cursor.
+func (p MySQLCompatibleQueryProvenance) ResolveSessionReadSet(ctx context.Context, conn mysqlCompatibleQueryConnection, req plugin.QueryRequest) (*plugin.QueryReadSet, error) {
 	if strings.Contains(req.Query, "/*+") {
 		return nil, p.readSetError("statement-level optimizer hints are not supported in a bound read")
 	}
 	var database sql.NullString
 	var mode string
-	if err := tx.QueryRowContext(ctx, "SELECT DATABASE(), @@SESSION.sql_mode").Scan(&database, &mode); err != nil {
+	if err := conn.QueryRowContext(ctx, "SELECT DATABASE(), @@SESSION.sql_mode").Scan(&database, &mode); err != nil {
 		return nil, fmt.Errorf("%w: read MySQL execution session: %w", plugin.ErrQueryReadSetUnresolved, err)
 	}
 	for _, option := range strings.Split(mode, ",") {
@@ -111,16 +111,16 @@ func (p MySQLCompatibleQueryProvenance) ResolveTransactionReadSet(ctx context.Co
 	if err != nil {
 		return nil, err
 	}
-	if err := p.checkNativeValueFunctions(ctx, tx, nativeFunctions); err != nil {
+	if err := p.checkNativeValueFunctions(ctx, conn, nativeFunctions); err != nil {
 		return nil, err
 	}
-	return p.resolveReadSet(ctx, req, database.String, references, &mysqlCompatibleDatabaseReadCatalog{db: tx})
+	return p.resolveReadSet(ctx, req, database.String, references, &mysqlCompatibleDatabaseReadCatalog{db: conn})
 }
 
 // CheckTransactionTables compares the actual base tables to the prepared read set
 // on the execution transaction. Each provider owns its native DDL boundary.
 func (p MySQLCompatibleQueryProvenance) CheckTransactionTables(ctx context.Context, tx *sql.Tx, request plugin.QueryRequest, expected *plugin.QueryReadSet) (*plugin.QueryReadSet, error) {
-	actual, err := p.ResolveTransactionReadSet(ctx, tx, request)
+	actual, err := p.ResolveSessionReadSet(ctx, tx, request)
 	if err != nil {
 		return nil, err
 	}

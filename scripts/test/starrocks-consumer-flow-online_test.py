@@ -75,6 +75,20 @@ class StarRocksConsumerTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(FLOW.API.SuiteError):
                 FLOW.validate_browser_report(bad, report, PROFILE)
 
+    def test_native_audit_window_matches_reader_selects_and_requires_retained_anchor(self):
+        before = "previous audit line"
+        metadata = "|User=business_reader|Db=business|State=EOF|QueryId=fixture-id"
+        ordinary = metadata + "|Stmt=SELECT optional_text FROM `business`.`source` WHERE id = 2"
+        incidental = metadata + "|Stmt=SELECT table_name FROM information_schema.tables"
+        outsider = ordinary.replace("business_reader", "root")
+        after = before + "\n" + "\n".join((incidental, outsider, ordinary))
+        self.assertEqual(FLOW.starrocks_business_selects(before, after), ["fixture-id"])
+        self.assertEqual(FLOW.starrocks_business_selects(after, after), [])
+        with self.assertRaises(FLOW.API.SuiteError):
+            FLOW.starrocks_business_selects(before, ordinary)
+        with self.assertRaises(FLOW.API.SuiteError):
+            FLOW.starrocks_business_selects(before, after.replace("|QueryId=fixture-id", ""))
+
     def test_one_shared_consumer_and_browser_implementation(self):
         root = Path(__file__).resolve().parents[2]
         for old in ('scripts/test/gaussdb-consumer-flow-online.py', 'console/frontend/e2e/online/gaussdb-consumer-flow.spec.js'):

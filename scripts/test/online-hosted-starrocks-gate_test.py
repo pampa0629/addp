@@ -42,7 +42,10 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
             from pathlib import Path
             operation=sys.argv[-1]
             with open(os.environ['ADDP_TEST_GATE_TRACE'],'a') as trace:trace.write('readonly:'+operation+'\\n')
-            assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']=='source-token'
+            if operation=='verify-revoked':
+                assert not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+            else:
+                assert os.environ['ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN']=='source-token'
             if operation=='prepare': Path(os.environ['ADDP_ONLINE_SECRET_DIR'],'readonly-sql-grants.json').write_text('[]')
             if os.environ.get('ADDP_TEST_READONLY_FAIL')==operation:sys.exit(1)
         """)
@@ -65,7 +68,7 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
         order=['infra-up','starrocks-fixture:start','starrocks-fixture:persistence','start:-security','start:-manager','start:-develop','--suite starrocks-consumer-flow',
             '--wait-protection-owners manager,develop',
             'register:starrocks-engine.json','readonly:prepare','make:test-online ONLINE_SUITE=starrocks-consumer-flow',
-            'readonly:cleanup','application-stop','starrocks-fixture:stop','infra-down']
+            'readonly:cleanup','readonly:verify-revoked','application-stop','starrocks-fixture:stop','infra-down']
         positions=[trace.index(step) for step in order]
         self.assertEqual(positions,sorted(positions))
         self.assertEqual(trace.count('register:'),1)

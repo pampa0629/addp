@@ -3,6 +3,7 @@ package starrocks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -163,5 +164,50 @@ func TestIntegrationProviderPreparedQueryAndNativeResultTypes(t *testing.T) {
 	result, err = p.ExecuteSQL(ctx, info, "SELECT name FROM source WHERE name=?", plugin.QueryOptions{ReadOnly: true, Args: []interface{}{"' OR 1=1 --"}})
 	if err != nil || len(result.Rows) != 0 {
 		t.Fatal("parameter treated as SQL")
+	}
+}
+
+func TestIntegrationProviderGuardedReadSession(t *testing.T) {
+	info := integrationInfo(t)
+	p := &Plugin{}
+	ctx := t.Context()
+	for _, allowed := range []bool{true, false} {
+		prepared, err := p.PrepareQuery(ctx, info, plugin.QueryRequest{
+			EngineID: 71, Language: "sql", Query: "SELECT name, amount FROM addp_acceptance.source WHERE id = :id",
+			Options: plugin.QueryOptions{ReadOnly: true, Parameters: map[string]any{"id": 2}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		denied := errors.New("fixture source authorization denied")
+		calls := 0
+		session, err := p.OpenGuardedQueryReadSession(ctx, prepared, func(_ context.Context, actual *plugin.QueryReadSet) error {
+			calls++
+			first := plugin.TabularItemPath(71, "database", "addp_acceptance", "source")
+			if !reflect.DeepEqual(actual.Paths, []plugin.EngineCatalogPath{first}) {
+				t.Fatalf("unexpected StarRocks ReadSet: %+v", actual.Paths)
+			}
+			if !allowed {
+				return denied
+			}
+			return nil
+		})
+		if session != nil {
+			defer session.Close(ctx)
+		}
+		if !allowed {
+			if session != nil || !errors.Is(err, denied) || calls != 1 {
+				t.Fatalf("expected denial before business cursor: callbacks=%d error=%v", calls, err)
+			}
+			continue
+		}
+		if err != nil || calls != 1 {
+			t.Fatalf("open prepared reader: callbacks=%d error=%v", calls, err)
+		}
+		batch, err := session.ReadBatch(ctx, 2)
+		if err != nil || len(batch.Rows) != 1 || batch.Rows[0]["name"] != "保留尾空格  " ||
+			batch.Fields[1].Precision != 38 || batch.Fields[1].Scale != 18 {
+			t.Fatalf("native result: %+v error=%v", batch, err)
+		}
 	}
 }

@@ -24,7 +24,7 @@ func (p *MySQLPlugin) OpenQueryReadSession(ctx context.Context, prepared plugin.
 }
 
 func (p *MySQLPlugin) bindQuerySources(ctx context.Context, tx *sql.Tx, request plugin.QueryRequest, expected *plugin.QueryReadSet) (*plugin.QueryReadSet, error) {
-	actual, err := p.queryProvenance().ResolveTransactionReadSet(ctx, tx, request)
+	actual, err := p.queryProvenance().ResolveSessionReadSet(ctx, tx, request)
 	if err != nil {
 		return nil, err
 	}

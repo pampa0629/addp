@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/addp/common/datatype"
 	"github.com/addp/common/engine/plugin"
+	commonquery "github.com/addp/common/query"
 )
 
 type mysqlCompatibleSourceBinder func(context.Context, *sql.Tx, plugin.QueryRequest, *plugin.QueryReadSet) (*plugin.QueryReadSet, error)
@@ -30,6 +32,76 @@ func OpenGuardedMySQLCompatibleQueryReadSession(
 		return nil, err
 	}
 	return &guardedMySQLCompatibleQueryReadSession{mysqlCompatibleQueryReadSession: session}, nil
+}
+
+// OpenGuardedMySQLCompatibleStatementReadSession uses a private connection for
+// both catalog verification and the validated statement, without a transaction.
+func OpenGuardedMySQLCompatibleStatementReadSession(
+	ctx context.Context,
+	provider plugin.ControlledReadOnlySQLProvider,
+	buildDSN func(plugin.ConnectionInfo) (string, error),
+	mapField func(*sql.ColumnType) datatype.FieldInfo,
+	prepared plugin.PreparedQuery,
+	authorize plugin.QueryReadAuthorizer,
+	bindSources func(context.Context, *sql.Conn, plugin.QueryRequest) (*plugin.QueryReadSet, error),
+) (plugin.GuardedQueryReadSession, error) {
+	if authorize == nil || provider.ControlledReadOnlySQLBoundary() != plugin.ControlledReadOnlySQLBoundaryValidatedStatement {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	expected, err := prepared.ReadSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+	binding, err := plugin.ConsumeSQLPreparedReadSession(prepared, provider)
+	if err != nil {
+		return nil, err
+	}
+	request := binding.Request
+	if expected == nil || !request.Options.ReadOnly || request.Options.Limit != 0 || request.Options.Offset != 0 {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	if err := commonquery.RequireReadOnly(request.Query); err != nil {
+		return nil, err
+	}
+	if err := binding.ValidateSingleStatementExecution(); err != nil {
+		return nil, err
+	}
+	dsn, err := buildDSN(binding.ConnectionInfo)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	sessionCtx, cancel := context.WithCancel(ctx)
+	s := &mysqlCompatibleQueryReadSession{db: db, binding: binding, cancel: cancel}
+	opened := false
+	defer func() {
+		if !opened {
+			_ = s.Close(ctx)
+		}
+	}()
+	s.conn, err = db.Conn(sessionCtx)
+	if err != nil {
+		return nil, err
+	}
+	actual, err := bindSources(sessionCtx, s.conn, request)
+	if err != nil {
+		return nil, err
+	}
+	if actual == nil || !reflect.DeepEqual(expected.Paths, actual.Paths) {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	if err := authorize(sessionCtx, actual.Clone()); err != nil {
+		return nil, err
+	}
+	s.readSet = actual
+	if err := s.openCursor(sessionCtx, s.conn, mapField); err != nil {
+		return nil, err
+	}
+	opened = true
+	return &guardedMySQLCompatibleQueryReadSession{mysqlCompatibleQueryReadSession: s}, nil
 }
 
 func OpenMySQLCompatibleQueryReadSession(
@@ -140,24 +212,33 @@ func openMySQLCompatibleQueryReadSession(
 			return nil, closeAfterSQLError(err)
 		}
 	}
-	s.rows, err = s.tx.QueryContext(sessionCtx, request.Query, request.Options.Args...)
-	if err != nil {
+	if err := s.openCursor(sessionCtx, s.tx, plugin.SQLResultFieldMapper(mapType)); err != nil {
 		return nil, closeAfterSQLError(err)
+	}
+	return s, nil
+}
+
+func (s *mysqlCompatibleQueryReadSession) openCursor(ctx context.Context, conn mysqlCompatibleQueryConnection, mapField func(*sql.ColumnType) datatype.FieldInfo) error {
+	request := s.binding.Request
+	var err error
+	s.rows, err = conn.QueryContext(ctx, request.Query, request.Options.Args...)
+	if err != nil {
+		return err
 	}
 	types, err := s.rows.ColumnTypes()
 	if err != nil {
-		return nil, closeAfterSQLError(err)
+		return err
 	}
-	mapField := plugin.SQLResultFieldMapper(mapType)
 	for _, column := range types {
 		s.fields = append(s.fields, mapField(column))
 	}
-	return s, nil
+	return nil
 }
 
 type mysqlCompatibleQueryReadSession struct {
 	db        interface{ Close() error }
 	tx        *sql.Tx
+	conn      *sql.Conn
 	readSet   *plugin.QueryReadSet
 	rows      *sql.Rows
 	binding   *plugin.SQLPreparedReadSession
@@ -250,6 +331,9 @@ func (s *mysqlCompatibleQueryReadSession) Close(context.Context) error {
 		if err := s.tx.Rollback(); !errors.Is(err, sql.ErrTxDone) {
 			result = errors.Join(result, err)
 		}
+	}
+	if s.conn != nil {
+		result = errors.Join(result, s.conn.Close())
 	}
 	if s.db != nil {
 		result = errors.Join(result, s.db.Close())

@@ -168,6 +168,14 @@ func (p *SQLPreparedReadSession) ValidateExecution(ctx context.Context, tx *sql.
 	return nil
 }
 
+// ValidateSingleStatementExecution rejects transforms requiring a transactional preflight.
+func (p *SQLPreparedReadSession) ValidateSingleStatementExecution() error {
+	if p.Request.Options.outputPreflight != nil {
+		return ErrQueryOutputTransformUnsupported
+	}
+	return nil
+}
+
 // ValidateSQLQueryOutputColumns describes a Provider-built zero-row SELECT in
 // the execution transaction. It never scans business values; catalog visibility
 // alone cannot prove the output of * (column grants and invisible columns).

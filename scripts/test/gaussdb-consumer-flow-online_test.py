@@ -194,7 +194,7 @@ class GaussDBConsumerTest(unittest.TestCase):
                 with patch.object(FIXTURE, 'sql') as ddl, patch.object(FIXTURE, 'table_read_count', side_effect=counters), \
                      patch.object(FLOW.SUPPORT, 'wait_for_scan', return_value='scan'), \
                      patch.object(FLOW.SUPPORT, 'required_environment', return_value=temp), \
-                     patch.object(FLOW, 'gaussdb_execution', side_effect=[allowed, existing, dict(denied, execution_id='outside'), denied]) as execute:
+                     patch.object(FLOW, 'sql_execution', side_effect=[allowed, existing, dict(denied, execution_id='outside'), denied]) as execute:
                     if expected:
                         FLOW.verify_gaussdb_future_table(issuer, consumer, 17, root, ('41','33'), journal)
                         self.assertEqual(json.loads(journal.read_text()), [])

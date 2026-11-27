@@ -7,6 +7,7 @@ import argparse
 from importlib import import_module
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -120,7 +121,7 @@ COMMIT;""")
     locator = SUPPORT.build_item_locator(engine, future_items[0])
     query = 'SELECT id FROM addp_acceptance.node_future ORDER BY id'
     before = fixture.table_read_count(state, 'node_future')
-    allowed = gaussdb_execution(consumer, engine, query, locator)
+    allowed = sql_execution(consumer, engine, query, locator)
     require(allowed.get('status') == 'success' and
             allowed.get('metadata', {}).get('result', {}).get('summary', {}).get('preview_rows') == [{'id':37}],
             'schema Grant did not return the new table row')
@@ -128,7 +129,7 @@ COMMIT;""")
     require(after > before, 'allowed query was absent from the owned source execution log')
     existing, = [item for item in items if item.get('full_name') == 'addp_acceptance.source']
     current_before = fixture.table_read_count(state, 'source')
-    existing_result = gaussdb_execution(consumer, engine,
+    existing_result = sql_execution(consumer, engine,
         'SELECT name FROM addp_acceptance.source WHERE id = 9007199254740993', SUPPORT.build_item_locator(engine, existing))
     require(existing_result.get('status') == 'success' and
             existing_result.get('metadata', {}).get('result', {}).get('summary', {}).get('preview_rows') == [{'name':'高斯正式接入中文'}],
@@ -136,15 +137,15 @@ COMMIT;""")
     current_reads = fixture.table_read_count(state, 'source') - current_before
     require(current_reads > 0, 'existing table query was absent from the owned source log')
     outside_before = fixture.table_read_count(state, 'outside_source', 'node_control')
-    outside_result = gaussdb_execution(consumer, engine, 'SELECT id FROM node_control.outside_source ORDER BY id',
+    outside_result = sql_execution(consumer, engine, 'SELECT id FROM node_control.outside_source ORDER BY id',
                                       f'addp://engine/{engine}/path/node_control/outside_source?type=table')
-    assert_gaussdb_read_denied(outside_result)
+    assert_source_read_denied(outside_result)
     outside_reads = fixture.table_read_count(state, 'outside_source', 'node_control') - outside_before
     require(outside_reads == 0, 'schema Grant allowed a source read outside its namespace')
     preparer.request('POST', base + '/' + command + '/revoke', (200,), {'reason':'End future-table read'})
-    denied = gaussdb_execution(consumer, engine, query, locator)
+    denied = sql_execution(consumer, engine, query, locator)
     require(denied['execution_id'] != allowed['execution_id'], 'replayed the previous execution')
-    assert_gaussdb_read_denied(denied)
+    assert_source_read_denied(denied)
     final = fixture.table_read_count(state, 'node_future')
     require(final == after, 'withdrawn execution issued a new source SELECT')
     evidence = dict(engine_id=engine, principal_id=recipient, scope=scope, grant=command, scan=scan,
@@ -289,13 +290,13 @@ def run(client,tenant,engine,timeout,profile):
     return report
 
 
-def gaussdb_execution(client, engine, query, locator):
+def sql_execution(client, engine, query, locator):
     submitted = client.request('POST', '/api/v1/develop/executions', (200,), {
         'dev_type': 'query', 'trigger_type': 'manual', 'execution_config': {'engine_id': engine},
         'content': {'query_type': 'sql', 'query': query, 'target_locator': locator},
         'timeout': 120,
     }).payload['execution_id']
-    require(isinstance(submitted, str) and submitted, 'missing GaussDB execution ID')
+    require(isinstance(submitted, str) and submitted, 'missing Develop execution ID')
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         result = client.request('GET', f'/api/v1/develop/executions/{submitted}/result', (200,)).payload
@@ -304,18 +305,18 @@ def gaussdb_execution(client, engine, query, locator):
             break
         time.sleep(1)
     else:
-        raise API.SuiteError('GaussDB execution did not reach a terminal state within 120 seconds')
+        raise API.SuiteError('Develop execution did not reach a terminal state within 120 seconds')
     return result
 
 
-def assert_gaussdb_read_denied(result):
+def assert_source_read_denied(result):
     details = result.get('error_details') or {}
     diagnostic = details.get('diagnostic') or {}
     require(result.get('status') == 'failed' and details.get('code') == 'develop.query.source_read_denied' and
             diagnostic.get('stage') == 'authorization' and diagnostic.get('reason') == 'permission_denied',
-            'revoked execution did not fail during source authorization')
+            'execution did not fail during source authorization')
     require((result.get('metadata') or {}).get('result') is None and not result.get('rows_affected'),
-            'revoked execution returned a result')
+            'unauthorized execution returned a result')
 
 
 def verify_gaussdb_revoked_execution(client, tenant, engine, directory):
@@ -337,17 +338,90 @@ def verify_gaussdb_revoked_execution(client, tenant, engine, directory):
     require(first['status'] == 'success' and len(first['rows']) == 2 and
             first['query'] == 'SELECT id,name,amount,optional_text FROM addp_acceptance.source ORDER BY id',
             'successful reference query required before revocation')
-    result = gaussdb_execution(client, engine, first['query'], first['target_locator'])
+    result = sql_execution(client, engine, first['query'], first['target_locator'])
     submitted = result['execution_id']
     require(submitted not in {q['execution_id'] for q in browser['queries']},
             'revocation check requires a fresh execution')
-    assert_gaussdb_read_denied(result)
+    assert_source_read_denied(result)
     details = result['error_details']
     diagnostic = details['diagnostic']
     evidence = dict(run_id=run_id, tenant_id=tenant, engine_id=engine, principal_id=browser['principal_id'],
                     allowed_execution=first['execution_id'], denied_execution=submitted, code=details['code'],
                     stage=diagnostic['stage'], result_delivered=False)
     (directory / 'gaussdb-revoked-execution.json').write_text(json.dumps(evidence))
+
+
+STARROCKS_READ = "SELECT optional_text FROM business.source WHERE id = 2"
+STARROCKS_JOIN = ("SELECT a.name FROM business.source a "
+                  "JOIN business.customers b ON a.id = b.customer_id")
+
+
+def starrocks_business_selects(before, after):
+    require(after.startswith(before), 'StarRocks FE audit window was replaced or rotated')
+    ids = []
+    for line in after[len(before):].splitlines():
+        metadata, separator, statement = line.partition('|Stmt=')
+        if not separator or '|User=business_reader|' not in metadata:
+            continue
+        normalized = statement.replace('`', '').lower()
+        if not re.match(r"^\s*select\b", normalized) or not re.search(
+                r"\b(?:from|join)\s+(?:business\.)?(?:source|customers)\b", normalized):
+            continue
+        match = re.search(r"\|QueryId=([^|]+)", metadata)
+        require(match and match[1] not in ('', 'null', 'NaN'), 'missing native StarRocks query ID')
+        ids.append(match[1])
+    return ids
+
+
+def verify_starrocks_reads(client, tenant, engine, directory, revoked):
+    fixture = import_module('business.starrocks.admission')
+    identity = API.validate_user_identity(client, tenant, PERMISSIONS)
+    context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
+    principal_id = str(context['principal']['id'])
+    locator = f'addp://engine/{engine}/path/business/source?type=table'
+    evidence_path = directory / 'starrocks-develop-source-reads.json'
+    if revoked:
+        evidence = json.loads(evidence_path.read_text())
+        require(evidence['engine_id'] == engine and evidence['identity'] == identity and
+                evidence['principal_id'] == principal_id and
+                set(evidence['checks']) == {'authorized', 'ungranted_join'},
+                'revocation check requires the original StarRocks consumer and successful test window')
+        cleanup = json.loads((directory / 'starrocks-grant-cleanup.json').read_text())
+        target = REGISTRATION.ExactRecordGrants.target(engine, 'business', 'source', 'table')
+        require(not cleanup['failed_requests'] and any(row['engine'] == engine and
+                row['action'] == 'read' and row['target'] == target for row in cleanup['grants']),
+                'confirmed revocation of the fixture source required')
+        cases = [('revoked', STARROCKS_READ, False)]
+    else:
+        evidence = dict(identity=identity, principal_id=principal_id, engine_id=engine, checks={})
+        cases = [('authorized', STARROCKS_READ, True), ('ungranted_join', STARROCKS_JOIN, False)]
+    checks = evidence['checks']
+    try:
+        for phase, query, allowed in cases:
+            before = fixture.read_business_audit()
+            result = sql_execution(client, engine, query, locator)
+            execution_id = result['execution_id']
+            require(execution_id not in {check['execution_id'] for check in checks.values()},
+                    'expected a new StarRocks execution ID')
+            after = fixture.read_business_audit()
+            ids = starrocks_business_selects(before, after)
+            details = result.get('error_details') or {}
+            diagnostic = details.get('diagnostic') or {}
+            checks[phase] = dict(execution_id=execution_id, status=result.get('status'),
+                                 query=query, source_selects=len(ids), native_query_ids=ids,
+                                 audit_start_bytes=len(before.encode()), audit_end_bytes=len(after.encode()),
+                                 code=details.get('code'), stage=diagnostic.get('stage'),
+                                 reason=diagnostic.get('reason'))
+            if allowed:
+                summary = result.get('metadata', {}).get('result', {}).get('summary', {})
+                require(result.get('status') == 'success' and summary.get('preview_rows') == [{'optional_text': ''}],
+                        'authorized StarRocks query did not return the fixture row')
+                require(len(ids) == 1, 'expected exactly one StarRocks source business SELECT')
+            else:
+                assert_source_read_denied(result)
+                require(not ids, 'denied StarRocks execution emitted a business SELECT')
+    finally:
+        evidence_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
 
 
 def main():
@@ -364,14 +438,21 @@ def main():
         if arguments.operation=='prepare': prepare(profile,tenant,engine)
         elif arguments.operation=='cleanup': cleanup(profile)
         else:
-            require(profile.engine_type == 'gaussdb' and not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
-                    and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'isolated GaussDB consumer required')
+            require(not os.environ.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+                    and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'isolated SQL consumer required')
             client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
-            verify_gaussdb_revoked_execution(client, tenant, engine, Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR')))
+            directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
+            if profile.engine_type == 'starrocks':
+                verify_starrocks_reads(client, tenant, engine, directory, revoked=True)
+            else:
+                verify_gaussdb_revoked_execution(client, tenant, engine, directory)
         return 0
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
     report=run(client,tenant,engine,float(os.environ.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS','900')),profile)
-    Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'),profile.engine_type+'-consumer-flow.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+    directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
+    (directory / (profile.engine_type+'-consumer-flow.json')).write_text(json.dumps(report,ensure_ascii=False,indent=2))
+    if profile.engine_type == 'starrocks':
+        verify_starrocks_reads(client, tenant, engine, directory, revoked=False)
     print(json.dumps(report,ensure_ascii=False,sort_keys=True))
     return 0
 

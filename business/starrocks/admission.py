@@ -66,6 +66,14 @@ def sql(name, statement, *, evidence=None):
     return run('docker', 'exec', '-i', name, 'mysql', '--default-character-set=utf8mb4', '--batch', '--raw', '-h127.0.0.1', '-P9030', '-uroot', input=statement, timeout=30, evidence=evidence)
 
 
+def read_business_audit():
+    state = json.loads((directory() / 'state.json').read_text())
+    name = state['business_name']
+    if not owned('container', name, state):
+        raise RuntimeError('disposable StarRocks Business fixture required for audit')
+    return run('docker', 'exec', name, 'cat', '/data/deploy/starrocks/fe/log/fe.audit.log')
+
+
 def backend_ready(rows):
     # A heartbeat can be Alive before the first disk report. StarRocks refuses
     # tablet creation while Backend.disksRef is empty; do not race that report.

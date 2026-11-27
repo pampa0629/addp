@@ -140,6 +140,23 @@ func (p *Plugin) PrepareQuery(_ context.Context, info plugin.ConnectionInfo, req
 	provenance := p.provenance()
 	return plugin.PrepareSQLRuntimeQuery(p, info, req, provenance.ResolveReadSet, provenance.ResolveOutputLineage)
 }
+func (p *Plugin) OpenGuardedQueryReadSession(ctx context.Context, prepared plugin.PreparedQuery, authorize plugin.QueryReadAuthorizer) (plugin.GuardedQueryReadSession, error) {
+	return shared.OpenGuardedMySQLCompatibleStatementReadSession(ctx, p, p.BuildDSN, resultField, prepared, authorize, p.resolveSessionSources)
+}
+
+var _ plugin.GuardedQueryReadSessionProvider = (*Plugin)(nil)
+
+func (p *Plugin) resolveSessionSources(ctx context.Context, conn *sql.Conn, request plugin.QueryRequest) (*plugin.QueryReadSet, error) {
+	var catalog string
+	if err := conn.QueryRowContext(ctx, "SELECT CATALOG()").Scan(&catalog); err != nil {
+		return nil, fmt.Errorf("%w: read StarRocks execution catalog: %w", plugin.ErrQueryReadSetUnresolved, err)
+	}
+	if catalog != "default_catalog" {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
+	return p.provenance().ResolveSessionReadSet(ctx, conn, request)
+}
+
 func (p *Plugin) GenerateSampleQuery(ctx context.Context, info plugin.ConnectionInfo, opts plugin.SampleQueryOptions) (string, string) {
 	return p.provenance().GenerateSampleQuery(ctx, info, opts.Path, p.SQLDialect(), 10), "sql"
 }

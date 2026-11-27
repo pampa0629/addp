@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_HOSTED_ONLY=starrocks
-# ADDP_T2_INPUT_FILES=business/starrocks/ business/docker-compose.yml common/engine/certification/starrocks/ common/engine/plugins/starrocks/ common/engine/plugin/ common/engine/plugins/shared/
+# ADDP_T2_INPUT_FILES=business/starrocks/ business/docker-compose.yml common/engine/certification/starrocks/ common/engine/plugins/starrocks/ common/engine/plugin/ common/engine/plugins/shared/ scripts/test/readonly-sql-consumer-flow-online.py
 # The Business owner manages disposable docker run / docker rm resources.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
@@ -37,10 +37,20 @@ for required in PreparedReadPrecisionAndLeastPrivilege ValidatedStatementAndNati
 done
 (cd "$ROOT_DIR/common" && GOWORK=off go test ./engine/plugins/starrocks -run '^TestIntegrationProvider' -count=1 -v) 2>&1 | tee "$ARTIFACT_DIR/provider.log"
 ! grep -q -- '--- SKIP:' "$ARTIFACT_DIR/provider.log"
-for required in CatalogAndBatch PreparedQueryAndNativeResultTypes; do
+for required in CatalogAndBatch PreparedQueryAndNativeResultTypes GuardedReadSession; do
     grep -q -- "--- PASS: TestIntegrationProvider${required} " "$ARTIFACT_DIR/provider.log" || exit 1
 done
 python3 "$ROOT_DIR/business/starrocks/admission.py" persistence
+(cd "$ROOT_DIR" && python3 - <<'AUDIT'
+from importlib import import_module
+fixture = import_module('business.starrocks.admission')
+flow = import_module('scripts.test.readonly-sql-consumer-flow-online')
+audit = fixture.read_business_audit()
+if not flow.starrocks_business_selects('', audit):
+    raise SystemExit('native StarRocks audit did not record the disposable reader business SELECT')
+print('STARROCKS_NATIVE_BUSINESS_AUDIT_PASS')
+AUDIT
+)
 python3 - "$ARTIFACT_DIR/admission-policy.json" <<'POLICY'
 import json, sys
 from pathlib import Path
@@ -63,6 +73,8 @@ Path(sys.argv[1]).write_text(json.dumps({
     'result': 'passed',
     'provider_implemented': True,
     'scope': 'default_catalog ordinary tables, catalog facts, batch preview and parameterized query',
+    'guarded_statement_read': True,
+    'native_business_audit_calibrated': True,
     'read_only_boundary': 'validated_statement',
     'database_read_only_transaction': False,
     'cross_statement_snapshot': False,
