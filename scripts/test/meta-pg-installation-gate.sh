@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ADDP_T2_INPUT_FILES=scripts/test/meta-database-restart-contract.py
 # Meta installation runs with the platform deployment role against an isolated PostgreSQL instance.
 set -euo pipefail
 mode=${1:---fresh}

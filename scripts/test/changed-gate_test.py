@@ -170,6 +170,17 @@ class ChangedGateTest(unittest.TestCase):
         self.assertEqual(["sample"], MODULE.affected_modules(self.repository, ["docker-compose.infra.yml"]))
         self.assertEqual(["sample"], MODULE.affected_modules(self.repository, [".env.example"]))
 
+    def test_mysql_platform_fixture_changes_select_existing_database_gates(self) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        for path, owners in (
+            ("scripts/test/docker-compose.local-macos-ci.yml", {"common"}),
+            ("scripts/test/meta-database-restart-contract.py", {"common", "meta"}),
+            ("scripts/test/common-mysql-data-protection-gate.sh", {"common", "orchestrator", "workbench"}),
+            ("scripts/test/module-platform-startup.py", {"workbench"}),
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(owners.issubset(MODULE.affected_modules(repository, [path])))
+
     def test_system_browser_login_inputs_select_system_iam(self) -> None:
         repository = Path(__file__).resolve().parents[2]
         for path in (

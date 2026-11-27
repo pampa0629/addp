@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=mysql
-# ADDP_T2_INPUT_FILES=docker-compose.infra.yml common/domainreference/ scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-manager-install-contract.sh scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py system/backend/internal/migration/mysql_source_grant_node.sql system/backend/internal/migration/mysql_source_grant_node_v4.sql
+# ADDP_T2_INPUT_FILES=docker-compose.infra.yml common/domainreference/ scripts/test/docker-compose.local-macos-ci.yml scripts/test/inference-platform-startup.py scripts/test/mysql-gateway-login.py scripts/test/mysql-manager-install-contract.sh scripts/test/mysql-gateway-install-contract.sh scripts/test/mysql-meta-install-contract.sh scripts/test/meta-database-restart-contract.py scripts/test/mysql-source-grant-boundary.sh system/backend/internal/migration/mysql_source_grant/persist_source_grant.sql system/backend/internal/migration/mysql_source_grant_catalog/003_initial_production_results.sql system/backend/internal/migration/mysql_source_grant_catalog/004_initial_upload_results.sql scripts/test/mysql-common-install-contract.sh scripts/test/mysql-system-install-contract.sh scripts/test/mysql-system-startup.py scripts/test/docker-compose.system-infra-configuration-t2.yml system/backend/cmd/iam-bootstrap/testdata/mysql_cli.py system/backend/internal/migration/mysql_source_grant_node.sql system/backend/internal/migration/mysql_source_grant_node_v4.sql
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_MYSQL_PASSWORD|ADDP_LOCAL_CI_MYSQL
 # common-mysql-data-protection-gate.sh - Verify the MySQL read contract and all four data-protection owners.
 
@@ -405,6 +405,7 @@ SQL
     if [[ "$owner" == workbench ]]; then
         cd "$ROOT_DIR/workbench/backend"
         GOWORK=off go build -o "$WORK_DIR/workbench" ./cmd/server
+        python3 "$ROOT_DIR/scripts/test/module-platform-startup.py" "$WORK_DIR/workbench" missing workbench
         status=0
         "$WORK_DIR/workbench" prepare-database > "$WORK_DIR/triggers.sql" || status=$?
         case "$status" in
@@ -414,6 +415,14 @@ SQL
         esac
         "$WORK_DIR/workbench" prepare-database
         unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+        workbench_schema_fingerprint() {
+            mysql_compose exec -T mysql sh -ec 'export MYSQL_PWD="$MYSQL_ROOT_PASSWORD"; exec mysqldump --no-data --skip-comments --no-tablespaces -uroot workbench' | shasum -a 256
+        }
+        before=$(workbench_schema_fingerprint)
+        python3 "$ROOT_DIR/scripts/test/module-platform-startup.py" "$WORK_DIR/workbench" ready
+        python3 "$ROOT_DIR/scripts/test/module-platform-startup.py" "$WORK_DIR/workbench" ready
+        [[ "$before" == "$(workbench_schema_fingerprint)" ]]
+        echo 'Workbench MySQL schema unchanged across both restricted runtime starts'
         ADDP_TEST_WORKBENCH_PLATFORM=1 GOWORK=off go test ./internal/repository -run '^TestWorkbenchDataApplicationRepositoryAgainstMySQL$' -count=1 -v | tee "$WORK_DIR/workbench.log"
         grep -q '^--- PASS: TestWorkbenchDataApplicationRepositoryAgainstMySQL ' "$WORK_DIR/workbench.log"
         exit 0

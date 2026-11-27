@@ -13,7 +13,7 @@ import time
 
 binary = Path(sys.argv[1]).resolve()
 module = binary.name
-route = {"orchestrator": "orchestrations", "monitor": "executions", "standard": "elements", "model": "entities", "service": "registered", "asset": "categories", "catalog": "entries", "graph": "ontologies", "ontology": "ontologies/release-check", "develop": "task-definitions", "quality": "rules", "transfer": "task-definitions"}[module]
+route = {"orchestrator": "orchestrations", "monitor": "executions", "standard": "elements", "model": "entities", "service": "registered", "asset": "categories", "catalog": "entries", "graph": "ontologies", "ontology": "ontologies/release-check", "develop": "task-definitions", "quality": "rules", "transfer": "task-definitions", "workbench": "data_applications"}[module]
 env = {key: os.environ[key] for key in (
     "ADDP_INFRA_DATABASE_PROVIDER", "ADDP_DATABASE_RUNTIME_USER", "ADDP_DATABASE_RUNTIME_PASSWORD",
     "ADDP_MYSQL_HOST", "ADDP_MYSQL_PORT", "ADDP_MYSQL_SSLMODE", "POSTGRES_HOST", "POSTGRES_PORT",

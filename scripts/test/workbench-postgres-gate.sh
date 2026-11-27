@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # ADDP_T2_SERVICES=postgres
+# ADDP_T2_INPUT_FILES=scripts/test/common-mysql-data-protection-gate.sh scripts/test/module-platform-startup.py
 # ADDP_T2_REQUIRED_ENV=WORKBENCH_POSTGRES_TEST_DSN
 # workbench-postgres-gate.sh - Run Workbench Data Application owner, revision, and concurrency tests against addp_test.
 
