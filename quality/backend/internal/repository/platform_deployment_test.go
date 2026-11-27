@@ -55,6 +55,11 @@ func TestInstalledQualityStorage(t *testing.T) {
 	t.Run("concurrent pending claim", func(t *testing.T) {
 		exerciseQualityConcurrentPendingClaim(t, db, 20)
 	})
+	t.Run("expired lease takeover", func(t *testing.T) {
+		const tenantID = 21
+		plan := createPlanRepositoryTestTask(t, db, tenantID)
+		exerciseQualityLeaseTakeover(t, db, tenantID, plan.ID)
+	})
 	checkQualityOverview(t, db)
 	t.Run("duplicate plan target is excluded while active", func(t *testing.T) {
 		const tenant = 18

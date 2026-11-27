@@ -53,17 +53,9 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 	repo := NewPlanRepository(db)
 	plan := createPlanRepositoryTestTask(t, db, tenantID)
 	ctx := t.Context()
-	databaseNow := func(t *testing.T) time.Time {
-		t.Helper()
-		now, err := commonExecution.DatabaseNow(db.WithContext(ctx))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return now.Truncate(time.Microsecond)
-	}
 	for _, status := range []string{"success", "failed", "timeout", "cancelled"} {
 		t.Run(status, func(t *testing.T) {
-			now := databaseNow(t)
+			now := qualityEventDatabaseTime(t, db)
 			item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
 			item.ExecutionConfig = commonModels.JSONMap{"private": "quality-event-sensitive-sentinel"}
 			if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
@@ -189,75 +181,10 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 		})
 	}
 	t.Run("retry_attempts", func(t *testing.T) {
-		now := databaseNow(t)
-		item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
-		item.MaxAttempts = 2
-		if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
-			t.Fatal(err)
-		}
-		if err := repo.AttachPendingAuthorization(ctx, tenantID, item.ExecutionID, qualityTestAuthorization(now.UnixNano(), now.Add(time.Hour))); err != nil {
-			t.Fatal(err)
-		}
-		first, _, err := repo.ClaimPendingExecution(ctx, "first-worker", time.Hour)
-		if err != nil || first == nil {
-			t.Fatalf("first claim: %v", err)
-		}
-		firstLease, err := commonExecution.LeaseFromExecution(*first)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := repo.UpdateExecutionProgress(ctx, firstLease, 33); err != nil {
-			t.Fatal(err)
-		}
-		expire := func() {
-			t.Helper()
-			if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", databaseNow(t).Add(-time.Minute)).Error; err != nil {
-				t.Fatal(err)
-			}
-			if err := repo.RecoverExpiredExecutions(ctx); err != nil {
-				t.Fatal(err)
-			}
-		}
-		expire()
-		var pending commonExecution.TaskExecution
-		if err := db.Where("execution_id = ?", item.ExecutionID).First(&pending).Error; err != nil {
-			t.Fatal(err)
-		}
-		if pending.StartedAt != nil || pending.LeaseToken != nil || pending.Attempt != 1 || !pending.CreatedAt.Equal(now) {
-			t.Fatalf("recovered pending has stale attempt time or identity: %#v", pending)
-		}
-		var owner models.QualityPlan
-		if err := db.First(&owner, plan.ID).Error; err != nil {
-			t.Fatal(err)
-		}
-		if owner.LastExecutionStatus != commonExecution.ExecutionStatusPending {
-			t.Fatalf("owner recovery status = %s", owner.LastExecutionStatus)
-		}
-		second, _, err := repo.ClaimPendingExecution(ctx, "replacement-worker", time.Hour)
-		if err != nil || second == nil || second.Attempt != 2 || second.Progress != 0 || second.StartedAt == nil || !second.StartedAt.After(*first.StartedAt) || second.LeaseToken == nil || *second.LeaseToken == firstLease.Token {
-			t.Fatalf("replacement did not reset progress: %v, %v", second, err)
-		}
-		if err := repo.UpdateExecutionProgress(ctx, firstLease, 66); !errors.Is(err, commonAPI.ErrConflict) {
-			t.Fatalf("old attempt appended progress: %v", err)
-		}
-		expire()
-		if err := repo.RecoverExpiredExecutions(ctx); err != nil {
-			t.Fatal(err)
-		}
-		assertQualityExecutionState(t, db, item.ExecutionID, "failed", 0)
-		assertQualityEventKinds(t, db, item.ExecutionID, "started", "progress", "started", "failed")
-		var events []commonExecution.Event
-		if err := db.Where("execution_id = ?", item.ExecutionID).Order("id").Find(&events).Error; err != nil {
-			t.Fatal(err)
-		}
-		for index, attempt := range []int{1, 1, 2, 2} {
-			if events[index].Attempt != attempt {
-				t.Fatalf("event %d lost attempt identity", index)
-			}
-		}
+		exerciseQualityLeaseTakeover(t, db, tenantID, plan.ID)
 	})
 	t.Run("recovered_pending_failure", func(t *testing.T) {
-		now := databaseNow(t)
+		now := qualityEventDatabaseTime(t, db)
 		item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
 		item.MaxAttempts = 2
 		if _, err := repo.CreateExecution(ctx, plan.ID, tenantID, item, models.PlanRunRequest{}); err != nil {
@@ -301,6 +228,109 @@ func testQualityExecutionEvents(t *testing.T, db *gorm.DB, tenantID int64) {
 			t.Fatalf("pending failure owner status = %s", owner.LastExecutionStatus)
 		}
 	})
+}
+
+func exerciseQualityLeaseTakeover(t *testing.T, db *gorm.DB, tenantID, planID int64) {
+	t.Helper()
+	ctx := t.Context()
+	repo := NewPlanRepository(db)
+	now := qualityEventDatabaseTime(t, db)
+	item := newQualityRepositoryTestExecution(uuid.NewString(), int(tenantID), now)
+	item.MaxAttempts = 2
+	if _, err := repo.CreateExecution(ctx, planID, tenantID, item, models.PlanRunRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AttachPendingAuthorization(ctx, tenantID, item.ExecutionID, qualityTestAuthorization(now.UnixNano(), now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := repo.ClaimPendingExecution(ctx, "first-worker", time.Hour)
+	if err != nil || first == nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	firstLease, err := commonExecution.LeaseFromExecution(*first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateExecutionProgress(ctx, firstLease, 33); err != nil {
+		t.Fatal(err)
+	}
+	expire := func() {
+		t.Helper()
+		if err := db.Model(&commonExecution.TaskExecution{}).Where("execution_id = ?", item.ExecutionID).Update("lease_expires_at", qualityEventDatabaseTime(t, db).Add(-time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.RecoverExpiredExecutions(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expire()
+	var pending commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", item.ExecutionID).First(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pending.Status != commonExecution.ExecutionStatusPending || pending.StartedAt != nil || pending.LeaseToken != nil || pending.Attempt != 1 || !pending.CreatedAt.Equal(now) {
+		t.Fatalf("recovered pending has stale attempt time or identity: %#v", pending)
+	}
+	var owner models.QualityPlan
+	if err := db.First(&owner, planID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if owner.LastExecutionStatus != commonExecution.ExecutionStatusPending {
+		t.Fatalf("owner recovery status = %s", owner.LastExecutionStatus)
+	}
+	// A replacement gets its own repository and lease identity.
+	repo = NewPlanRepository(db)
+	second, _, err := repo.ClaimPendingExecution(ctx, "replacement-worker", time.Hour)
+	if err != nil || second == nil || second.ExecutionID != item.ExecutionID ||
+		second.Attempt != 2 || second.LeaseOwner == nil || *second.LeaseOwner != "replacement-worker" || second.Progress != 0 || second.StartedAt == nil || !second.StartedAt.After(*first.StartedAt) || second.LeaseToken == nil || *second.LeaseToken == firstLease.Token {
+		t.Fatalf("replacement did not reset progress: %v, %v", second, err)
+	}
+	if err := repo.UpdateExecutionProgress(ctx, firstLease, 66); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("old attempt appended progress: %v", err)
+	}
+	if err := repo.CompleteExecutionWithLease(ctx, planID, tenantID, firstLease, commonExecution.ExecutionStatusSuccess, nil); !errors.Is(err, commonAPI.ErrConflict) {
+		t.Fatalf("old attempt completed replacement execution: %v", err)
+	}
+	assertQualityExecutionState(t, db, item.ExecutionID, commonExecution.ExecutionStatusRunning, 0)
+	assertQualityEventKinds(t, db, item.ExecutionID, "started", "progress", "started")
+	expire()
+	if err := repo.RecoverExpiredExecutions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var failed commonExecution.TaskExecution
+	if err := db.Where("execution_id = ?", item.ExecutionID).First(&failed).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failed.Status != commonExecution.ExecutionStatusFailed || failed.Attempt != 2 || failed.Progress != 0 ||
+		failed.CompletedAt == nil || failed.LeaseOwner != nil || failed.LeaseToken != nil || failed.LeaseExpiresAt != nil {
+		t.Fatalf("execution %s did not reach a failed terminal state with its lease cleared", item.ExecutionID)
+	}
+	if err := db.First(&owner, planID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if owner.LastExecutionID != item.ExecutionID || owner.LastExecutionStatus != commonExecution.ExecutionStatusFailed {
+		t.Fatalf("failed execution summary = %s/%s", owner.LastExecutionID, owner.LastExecutionStatus)
+	}
+	assertQualityEventKinds(t, db, item.ExecutionID, "started", "progress", "started", "failed")
+	var events []commonExecution.Event
+	if err := db.Where("execution_id = ?", item.ExecutionID).Order("id").Find(&events).Error; err != nil {
+		t.Fatal(err)
+	}
+	for index, attempt := range []int{1, 1, 2, 2} {
+		if events[index].Attempt != attempt {
+			t.Fatalf("event %d lost attempt identity", index)
+		}
+	}
+	t.Logf("execution=%s replacement=attempt_2 rejected_old_progress_and_completion=true terminal=failed failed_events=1", item.ExecutionID)
+}
+
+func qualityEventDatabaseTime(t *testing.T, db *gorm.DB) time.Time {
+	t.Helper()
+	now, err := commonExecution.DatabaseNow(db.WithContext(t.Context()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return now.Truncate(time.Microsecond)
 }
 
 func assertQualityExecutionState(t *testing.T, db *gorm.DB, id, status string, progress int) {
