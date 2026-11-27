@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	commonapi "github.com/addp/common/api"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/addp/system/internal/migration"
 	"github.com/addp/system/internal/testsupport"
 	"github.com/google/uuid"
@@ -37,6 +41,27 @@ func TestOAuthClientManagementServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("apply IAM migrations: %v", err)
 	}
 
+	exerciseManagedOAuthClient(t, ctx, db)
+}
+
+func TestOAuthClientManagementServiceAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_OAUTH_CLIENT_MANAGEMENT") != "1" {
+		t.Skip("requires isolated System MySQL installation")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(database.Config{Schema: "system"}, "system", &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Close() })
+	exerciseManagedOAuthClient(t, t.Context(), db)
+}
+
+func exerciseManagedOAuthClient(t *testing.T, ctx context.Context, db *gorm.DB) {
+	t.Helper()
 	repository := NewRepository(db)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	identityService := NewIdentityService(repository, testDatabaseTime(func() time.Time { return now }))
@@ -69,11 +94,13 @@ func TestOAuthClientManagementServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("cross-tenant get error = %v, want not found", err)
 	}
 
+	redirectURIs := []string{"https://bi.example.com/oauth/callback", "http://127.0.0.1:49152/callback"}
 	updated, err := service.Update(ctx, UpdateManagedOAuthClientInput{
 		TenantID: tenant.ID, ActorPrincipalID: user.PrincipalID, ClientID: created.ClientID, Version: created.Version,
-		DisplayName: "Research BI Desktop", RedirectURIs: []string{"https://bi.example.com/oauth/callback", "http://127.0.0.1:49152/callback"}, Audit: audit,
+		DisplayName: "Research BI Desktop", RedirectURIs: redirectURIs, Audit: audit,
 	})
-	if err != nil || updated.Version != 2 || len(updated.RedirectURIs) != 2 {
+	if err != nil || updated.Version != 2 || !slices.Equal(updated.RedirectURIs, redirectURIs) ||
+		!slices.Equal(updated.AllowedScopes, []string{"addp.api"}) || !slices.Equal(updated.AllowedAudiences, []string{"addp.api"}) {
 		t.Fatalf("updated client = %#v, error = %v", updated, err)
 	}
 	if _, err := service.Update(ctx, UpdateManagedOAuthClientInput{
@@ -83,36 +110,66 @@ func TestOAuthClientManagementServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("stale update error = %v, want version conflict", err)
 	}
 
+	insertRequest := func(id uuid.UUID, scopes dbtypes.StringArray) error {
+		return db.Exec(`
+    INSERT INTO system.oauth_authorization_requests (
+      id,request_secret_hash,client_id,redirect_uri,response_types,response_mode,requested_scopes,requested_audiences,status,requested_at,expires_at
+    ) VALUES (?,?,?,?,?,'query',?,?,'pending',?,?)
+  `, id, strings.Repeat(strings.ReplaceAll(id.String(), "-", ""), 2), created.ClientID, updated.RedirectURIs[0],
+			dbtypes.StringArray{"code"}, scopes, dbtypes.StringArray{"addp.api"}, now.Add(-time.Minute), now.Add(4*time.Minute)).Error
+	}
 	requestID := uuid.New()
-	if err := db.Exec(`
-		INSERT INTO system.oauth_authorization_requests (
-			id, request_secret_hash, client_id, redirect_uri, response_types, response_mode,
-			requested_scopes, requested_audiences, status, requested_at, expires_at
-		) VALUES (?, ?, ?, ?, ARRAY['code']::text[], 'query', ARRAY['addp.api']::text[],
-			ARRAY['addp.api']::text[], 'pending', ?, ?)
-	`, requestID, strings.Repeat("a", 64), created.ClientID, updated.RedirectURIs[0], now.Add(-time.Minute), now.Add(4*time.Minute)).Error; err != nil {
+	if err := insertRequest(requestID, dbtypes.StringArray{"addp.api"}); err != nil {
 		t.Fatalf("insert pending authorization request: %v", err)
 	}
 	var authorizationVersion int64
 	if err := db.Raw(`SELECT authorization_version FROM system.principals WHERE id = ?`, user.PrincipalID).Scan(&authorizationVersion).Error; err != nil {
 		t.Fatal(err)
 	}
-	var familyID int64
-	if err := db.Raw(`
-		INSERT INTO system.refresh_token_families (
-			protocol_request_id, principal_id, context_type, tenant_membership_id,
-			issued_authorization_version, client_id, auth_type, audiences, scopes,
-			authentication_methods, assurance_level, authenticated_at, expires_at
-		) VALUES (?, ?, 'tenant', ?, ?, ?, 'oauth', ARRAY['addp.api']::text[],
-			ARRAY['addp.api']::text[], ARRAY['password']::text[], 'aal1', ?, ?)
-		RETURNING id
-	`, uuid.New(), user.PrincipalID, membership.Membership.ID, authorizationVersion, created.ClientID, now.Add(-time.Minute), now.Add(time.Hour)).Scan(&familyID).Error; err != nil {
+	t.Run("registered scope and terminal approval", func(t *testing.T) {
+		if err := insertRequest(uuid.New(), dbtypes.StringArray{"other"}); err == nil {
+			t.Fatal("request exceeded registered scope")
+		}
+		id := uuid.New()
+		if err := insertRequest(id, dbtypes.StringArray{"addp.api"}); err != nil {
+			t.Fatal(err)
+		}
+		approve := func(version int64, scopes dbtypes.StringArray) error {
+			return db.Exec(`
+     UPDATE system.oauth_authorization_requests
+     SET status='approved',principal_id=?,context_type='tenant',tenant_membership_id=?,issued_authorization_version=?,
+       granted_scopes=?,granted_audiences=?,authentication_methods=?,assurance_level='aal1',authenticated_at=?,completed_at=CURRENT_TIMESTAMP(6)
+     WHERE id=?
+   `, user.PrincipalID, membership.Membership.ID, version, scopes, dbtypes.StringArray{"addp.api"}, dbtypes.StringArray{"password"}, now, id).Error
+		}
+		if err := approve(authorizationVersion+1, dbtypes.StringArray{"addp.api"}); err == nil {
+			t.Fatal("stale identity approved")
+		}
+		if err := approve(authorizationVersion, dbtypes.StringArray{"other"}); err == nil {
+			t.Fatal("scope outside request approved")
+		}
+		if err := approve(authorizationVersion, dbtypes.StringArray{"addp.api"}); err != nil {
+			t.Fatalf("approve pending request: %v", err)
+		}
+		if err := approve(authorizationVersion, dbtypes.StringArray{"addp.api"}); err == nil {
+			t.Fatal("terminal approval was rewritten")
+		}
+	})
+	protocolID := uuid.New()
+	family := RefreshTokenFamily{
+		ProtocolRequestID: &protocolID, PrincipalID: user.PrincipalID, ContextType: ContextTypeTenant,
+		TenantMembershipID: &membership.Membership.ID, IssuedAuthorizationVersion: authorizationVersion,
+		ClientID: created.ClientID, AuthType: "oauth", Audiences: DBStringList{"addp.api"}, Scopes: DBStringList{"addp.api"},
+		AuthenticationMethods: DBStringList{"password"}, AssuranceLevel: AssuranceLevelAAL1,
+		AuthenticatedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour),
+	}
+	if err := db.Create(&family).Error; err != nil {
 		t.Fatalf("insert active token family: %v", err)
 	}
 	if err := db.Exec(`
 		INSERT INTO system.access_tokens (token_hash, family_id, expires_at)
 		VALUES (?, ?, ?)
-	`, strings.Repeat("b", 64), familyID, now.Add(15*time.Minute)).Error; err != nil {
+	`, strings.Repeat("b", 64), family.ID, now.Add(15*time.Minute)).Error; err != nil {
 		t.Fatalf("insert active access token: %v", err)
 	}
 
@@ -128,10 +185,10 @@ func TestOAuthClientManagementServiceAgainstPostgres(t *testing.T) {
 		t.Fatalf("authorization request status = %q, error = %v", pendingStatus, err)
 	}
 	var revokedFamilies, revokedAccessTokens int64
-	if err := db.Raw(`SELECT count(*) FROM system.refresh_token_families WHERE id = ? AND revoked_at IS NOT NULL`, familyID).Scan(&revokedFamilies).Error; err != nil {
+	if err := db.Raw(`SELECT count(*) FROM system.refresh_token_families WHERE id = ? AND revoked_at IS NOT NULL`, family.ID).Scan(&revokedFamilies).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Raw(`SELECT count(*) FROM system.access_tokens WHERE family_id = ? AND revoked_at IS NOT NULL`, familyID).Scan(&revokedAccessTokens).Error; err != nil {
+	if err := db.Raw(`SELECT count(*) FROM system.access_tokens WHERE family_id = ? AND revoked_at IS NOT NULL`, family.ID).Scan(&revokedAccessTokens).Error; err != nil {
 		t.Fatal(err)
 	}
 	if revokedFamilies != 1 || revokedAccessTokens != 1 {

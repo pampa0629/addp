@@ -7,7 +7,7 @@ import (
 	"time"
 
 	commonapi "github.com/addp/common/api"
-	"github.com/lib/pq"
+	"github.com/addp/common/infra/database/dbtypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -38,14 +38,14 @@ type ManagedOAuthClient struct {
 }
 
 type managedOAuthClientRow struct {
-	ClientID             string         `gorm:"column:client_id"`
-	DisplayName          string         `gorm:"column:display_name"`
-	RedirectURIs         pq.StringArray `gorm:"column:redirect_uris;type:text[]"`
-	GrantTypes           pq.StringArray `gorm:"column:grant_types;type:text[]"`
-	ResponseTypes        pq.StringArray `gorm:"column:response_types;type:text[]"`
-	AllowedScopes        pq.StringArray `gorm:"column:allowed_scopes;type:text[]"`
-	AllowedAudiences     pq.StringArray `gorm:"column:allowed_audiences;type:text[]"`
-	TokenAuthMethod      string         `gorm:"column:token_endpoint_auth_method"`
+	ClientID             string              `gorm:"column:client_id"`
+	DisplayName          string              `gorm:"column:display_name"`
+	RedirectURIs         dbtypes.StringArray `gorm:"column:redirect_uris"`
+	GrantTypes           dbtypes.StringArray `gorm:"column:grant_types"`
+	ResponseTypes        dbtypes.StringArray `gorm:"column:response_types"`
+	AllowedScopes        dbtypes.StringArray `gorm:"column:allowed_scopes"`
+	AllowedAudiences     dbtypes.StringArray `gorm:"column:allowed_audiences"`
+	TokenAuthMethod      string              `gorm:"column:token_endpoint_auth_method"`
 	Status               OAuthClientStatus
 	Version              int64
 	CreatedByPrincipalID int64 `gorm:"column:created_by_principal_id"`
@@ -125,11 +125,11 @@ func (r *Repository) CreateManagedOAuthClient(ctx context.Context, tenantID int6
 	}
 	row := managedOAuthClientRow{
 		ClientID: client.ClientID, DisplayName: client.DisplayName,
-		RedirectURIs:     pq.StringArray(append([]string(nil), client.RedirectURIs...)),
-		GrantTypes:       pq.StringArray(append([]string(nil), client.GrantTypes...)),
-		ResponseTypes:    pq.StringArray(append([]string(nil), client.ResponseTypes...)),
-		AllowedScopes:    pq.StringArray(append([]string(nil), client.AllowedScopes...)),
-		AllowedAudiences: pq.StringArray(append([]string(nil), client.AllowedAudiences...)),
+		RedirectURIs:     dbtypes.StringArray(client.RedirectURIs),
+		GrantTypes:       dbtypes.StringArray(client.GrantTypes),
+		ResponseTypes:    dbtypes.StringArray(client.ResponseTypes),
+		AllowedScopes:    dbtypes.StringArray(client.AllowedScopes),
+		AllowedAudiences: dbtypes.StringArray(client.AllowedAudiences),
 		TokenAuthMethod:  client.TokenAuthMethod, Status: client.Status, Version: client.Version,
 		CreatedByPrincipalID: client.CreatedByPrincipal,
 	}
@@ -139,7 +139,7 @@ func (r *Repository) CreateManagedOAuthClient(ctx context.Context, tenantID int6
 		"redirect_uris": row.RedirectURIs, "grant_types": row.GrantTypes,
 		"response_types": row.ResponseTypes, "allowed_scopes": row.AllowedScopes,
 		"allowed_audiences": row.AllowedAudiences, "token_endpoint_auth_method": row.TokenAuthMethod,
-		"request_uris": pq.StringArray{}, "status": row.Status, "owner_scope": "tenant",
+		"request_uris": dbtypes.StringArray{}, "status": row.Status, "owner_scope": "tenant",
 		"owner_tenant_id": tenantID, "version": row.Version,
 		"created_by_principal_id": row.CreatedByPrincipalID,
 	}).Error)
@@ -157,7 +157,7 @@ func (r *Repository) UpdateManagedOAuthClient(
 		Where("owner_scope = 'tenant' AND owner_tenant_id = ? AND service_principal_id IS NULL AND client_id = ? AND version = ?", tenantID, clientID, version).
 		Updates(map[string]any{
 			"display_name":  displayName,
-			"redirect_uris": pq.StringArray(append([]string(nil), redirectURIs...)),
+			"redirect_uris": dbtypes.StringArray(redirectURIs),
 			"version":       gorm.Expr("version + 1"),
 		})
 	return r.managedOAuthClientWriteResult(ctx, result, tenantID, clientID)
