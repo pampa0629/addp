@@ -347,9 +347,116 @@ func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gor
 			}
 		})
 	}
+	approverCredential := func(t *testing.T, principalID int64) string {
+		t.Helper()
+		current, err := repo.internalTaskDatabaseTime(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selected, err := selection.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: principalID,
+			Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: current}, Audit: audit})
+		if err != nil || selected.Session == nil {
+			t.Fatal(selected, err)
+		}
+		return selected.Session.AccessToken
+	}
+	newApprover := func(t *testing.T, name string, permitted bool) (string, int64) {
+		t.Helper()
+		person := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), name, audit)
+		m := establishContextSelectionMembership(t, ctx, members, tenant.ID, person.PrincipalID, audit)
+		if permitted {
+			insertRoleAssignment(t, db, person.PrincipalID, approvalRole.RoleKey, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
+		}
+		return approverCredential(t, person.PrincipalID), m.Membership.ID
+	}
+	t.Run("every frozen target must be independently approved before claim", func(t *testing.T) {
+		first, firstMember := newApprover(t, "dual-target-first", true)
+		second, secondMember := newApprover(t, "dual-target-second", true)
+		membersTarget := execution.DevelopFileTargetIntent{NodeID: "members", Target: plugin.FileItemPath(uint(engineID), "outputs/members.gpkg"), Mode: "fail"}
+		two, bound, issueInput := issue(t, true, membersTarget)
+		authID, _ := strconv.ParseInt(two.AuthorizationID, 10, 64)
+		check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: authID, ExecutionID: issueInput.ExecutionID, TenantID: tenant.ID,
+			ExpectedAttempt: 1, ScopeDigest: bound.ScopeDigest, Audit: serviceAudit}
+		approve := ApproveDevelopFileCreateInput{UserAccessToken: first, AuthorizationID: authID, ScopeDigest: bound.ScopeDigest, ExpiresAt: bound.Authorization.ExpiresAt.Add(-time.Second), Audit: audit}
+		// Grant management over the two exact targets to the fixture approvers.
+		old := svc.prepareCreateApprover
+		t.Cleanup(func() { svc.SetCreateApproverPreparer(old) })
+		svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, tid, member int64, target execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error) {
+			if tid != tenant.ID || (member != firstMember && member != secondMember) || bound.Scope.TargetIndex(target.Target) < 0 {
+				return nil, commonapi.ErrForbidden
+			}
+			return func(time.Time) (*time.Time, error) { return nil, nil }, nil
+		})
+		approve.TargetIndex = 1
+		secondReceipt, err := svc.ApproveCreate(ctx, approve)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obs, access, err := svc.Check(ctx, check); err != nil || access != nil || obs == nil || obs.State != "awaiting_approval" || len(obs.ApprovalIDs) != 0 {
+			t.Fatal(obs, access, err)
+		}
+		if _, err := svc.ApproveCreate(ctx, approve); !errors.Is(err, ErrExecutionAuthorizationConflict) {
+			t.Fatal("repeated second approval consumed the missing first target")
+		}
+		approve.TargetIndex = 2
+		if _, err := svc.ApproveCreate(ctx, approve); err == nil {
+			t.Fatal("unfrozen target approved")
+		}
+		approve.TargetIndex, approve.UserAccessToken = 0, second
+		firstReceipt, err := svc.ApproveCreate(ctx, approve)
+		if err != nil {
+			t.Fatal(err)
+		}
+		obs, access, err := svc.Check(ctx, check)
+		if err != nil || access != nil || obs == nil || obs.State != "ready" || !reflect.DeepEqual(obs.ApprovalIDs, []string{firstReceipt.ApprovalID, secondReceipt.ApprovalID}) {
+			t.Fatal(obs, access, err)
+		}
+		_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: two.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "two-file-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
+		if err != nil || lease == nil {
+			t.Fatal("fully approved execution not claimed", err)
+		}
+		two.AdmissionState = "ready"
+		check.LeaseToken, check.Source = uuid.MustParse(lease.Token), &path
+		if _, access, err := svc.Check(ctx, check); err != nil || access == nil {
+			t.Fatal("source check after both approvals", err)
+		}
+		check.Source = nil
+		snapshotsBefore := targetSnapshots
+		t.Cleanup(func() { targetSnapshots = snapshotsBefore })
+		for index, approval := range obs.ApprovalIDs {
+			request := client.DevelopFilePublicationRequest{TargetIndex: index, ExecutionID: two.ExecutionID, Attempt: 1, LeaseToken: lease.Token, ScopeDigest: bound.ScopeDigest, ApprovalID: approval, OperationID: uuid.NewString(), Stage: client.DevelopFilePublicationPrepare}
+			two.Publications = append(two.Publications, client.DevelopFilePublicationFacts{ApprovalID: approval, Request: plugin.NewFilePublicationRequest{OperationID: request.OperationID, Target: bound.Scope.Targets[index].Target, SizeBytes: 8192, SHA256: strings.Repeat("a", 64)}})
+			originalPath := two.Publications[index].Request.Target
+			two.Publications[index].Request.Target = plugin.FileItemPath(originalPath.EngineID, "outputs/not-approved.gpkg")
+			if value, err := svc.AuthorizePublication(ctx, check, request); err == nil || value != nil {
+				t.Fatal("authorized publication outside the approved paths")
+			}
+			two.Publications[index].Request.Target = originalPath
+			other := request
+			other.ApprovalID = obs.ApprovalIDs[1-index]
+			if value, err := svc.AuthorizePublication(ctx, check, other); err == nil || value != nil {
+				t.Fatal("used sibling approval for own target")
+			}
+			if value, err := svc.AuthorizePublication(ctx, check, request); err != nil || value == nil || value.Engine == nil {
+				t.Fatal("missing original prepare", index, err)
+			}
+			if value, err := svc.AuthorizePublication(ctx, check, request); !errors.Is(err, ErrExecutionAuthorizationConflict) || value != nil {
+				t.Fatal("repeated prepare authorized", err)
+			}
+			request.Stage, request.PreparationDigest = client.DevelopFilePublicationRelease, strings.Repeat("b", 64)
+			two.Publications[index].PreparationDigest = request.PreparationDigest
+			if value, err := svc.AuthorizePublication(ctx, check, request); err != nil || value == nil || value.Engine != nil {
+				t.Fatal("missing original release", index, err)
+			}
+			history, err := svc.ReadPublicationHistory(ctx, check, uuid.MustParse(request.OperationID))
+			if err != nil || history == nil || history.ApprovalID != approval || history.ReleasedAt == nil {
+				t.Fatal("unbound per-file history", index, err)
+			}
+		}
+	})
 	if db.Dialector.Name() == "mysql" {
 		return
-	} // This MySQL gate exercises the read-only child contract.
+	}
 	t.Run("direct scheduled root is not a trusted parent child", func(t *testing.T) {
 		facts, id := newPending(t, false)
 		if err := db.Table("common.task_executions").Where("execution_id=?", id.String()).UpdateColumn("trigger_type", "scheduled").Error; err != nil {
@@ -499,32 +606,10 @@ func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gor
 		}
 	})
 	t.Run("human approval binds one original pending without activating it", func(t *testing.T) {
-		approverCredential := func(principalID int64) string {
-			t.Helper()
-			current, err := repo.internalTaskDatabaseTime(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			selected, err := selection.BeginContextSelection(ctx, BeginContextSelectionInput{PrincipalID: principalID,
-				Authentication: SessionAuthentication{Methods: []string{"password"}, AssuranceLevel: AssuranceLevelAAL1, AuthenticatedAt: current}, Audit: audit})
-			if err != nil || selected.Session == nil {
-				t.Fatal(selected, err)
-			}
-			return selected.Session.AccessToken
-		}
-		newApprover := func(name string, permitted bool) (string, int64) {
-			t.Helper()
-			person := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), name, audit)
-			m := establishContextSelectionMembership(t, ctx, members, tenant.ID, person.PrincipalID, audit)
-			if permitted {
-				insertRoleAssignment(t, db, person.PrincipalID, approvalRole.RoleKey, "tenant", &tenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
-			}
-			return approverCredential(person.PrincipalID), m.Membership.ID
-		}
-		first, firstMember := newApprover("file-create-approver-first", true)
-		second, secondMember := newApprover("file-create-approver-second", true)
-		noScope, _ := newApprover("file-create-approver-no-scope", true)
-		noPermission, _ := newApprover("file-create-approver-no-permission", false)
+		first, firstMember := newApprover(t, "file-create-approver-first", true)
+		second, secondMember := newApprover(t, "file-create-approver-second", true)
+		noScope, _ := newApprover(t, "file-create-approver-no-scope", true)
+		noPermission, _ := newApprover(t, "file-create-approver-no-permission", false)
 		otherTenant := createContextSelectionTenant(t, ctx, members, "develop-file-foreign", audit)
 		foreignPerson := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "file-create-approver-foreign", audit)
 		establishContextSelectionMembership(t, ctx, members, otherTenant.ID, foreignPerson.PrincipalID, audit)
@@ -536,7 +621,7 @@ func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gor
 			t.Fatal(err)
 		}
 		insertRoleAssignment(t, db, foreignPerson.PrincipalID, foreignRole.RoleKey, "tenant", &otherTenant.ID, nil, nil, now.Add(-time.Minute), nil, "manual")
-		foreign := approverCredential(foreignPerson.PrincipalID)
+		foreign := approverCredential(t, foreignPerson.PrincipalID)
 		facts, issued, input := issue(t, true)
 		id, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 		allowManagement := true
@@ -548,80 +633,7 @@ func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gor
 			}
 			return func(time.Time) (*time.Time, error) { return managementExpiry, nil }, nil
 		})
-		t.Run("every frozen target must be independently approved before claim", func(t *testing.T) {
-			membersTarget := execution.DevelopFileTargetIntent{NodeID: "members", Target: plugin.FileItemPath(uint(engineID), "outputs/members.gpkg"), Mode: "fail"}
-			two, bound, issueInput := issue(t, true, membersTarget)
-			authID, _ := strconv.ParseInt(two.AuthorizationID, 10, 64)
-			check := CheckDevelopFileInput{ServiceAccessToken: serviceToken, AuthorizationID: authID, ExecutionID: issueInput.ExecutionID, TenantID: tenant.ID,
-				ExpectedAttempt: 1, ScopeDigest: bound.ScopeDigest, Audit: serviceAudit}
-			approve := ApproveDevelopFileCreateInput{UserAccessToken: first, AuthorizationID: authID, ScopeDigest: bound.ScopeDigest, ExpiresAt: bound.Authorization.ExpiresAt.Add(-time.Second), Audit: audit}
-			// Grant management over the two exact targets to the fixture approvers.
-			old := svc.prepareCreateApprover
-			t.Cleanup(func() { svc.SetCreateApproverPreparer(old) })
-			svc.SetCreateApproverPreparer(func(_ context.Context, _ *gorm.DB, tid, member int64, target execution.DevelopBoundFileTarget) (func(time.Time) (*time.Time, error), error) {
-				if tid != tenant.ID || (member != firstMember && member != secondMember) || bound.Scope.TargetIndex(target.Target) < 0 {
-					return nil, commonapi.ErrForbidden
-				}
-				return func(time.Time) (*time.Time, error) { return nil, nil }, nil
-			})
-			approve.TargetIndex = 1
-			secondReceipt, err := svc.ApproveCreate(ctx, approve)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if obs, access, err := svc.Check(ctx, check); err != nil || access != nil || obs == nil || obs.State != "awaiting_approval" || len(obs.ApprovalIDs) != 0 {
-				t.Fatal(obs, access, err)
-			}
-			if _, err := svc.ApproveCreate(ctx, approve); err == nil {
-				t.Fatal("repeated second approval consumed the missing first target")
-			}
-			approve.TargetIndex = 2
-			if _, err := svc.ApproveCreate(ctx, approve); err == nil {
-				t.Fatal("unfrozen target approved")
-			}
-			approve.TargetIndex, approve.UserAccessToken = 0, second
-			firstReceipt, err := svc.ApproveCreate(ctx, approve)
-			if err != nil {
-				t.Fatal(err)
-			}
-			obs, access, err := svc.Check(ctx, check)
-			if err != nil || access != nil || obs == nil || obs.State != "ready" || !reflect.DeepEqual(obs.ApprovalIDs, []string{firstReceipt.ApprovalID, secondReceipt.ApprovalID}) {
-				t.Fatal(obs, access, err)
-			}
-			_, lease, err := execution.ClaimPending(ctx, db, execution.PendingIdentity{ExecutionID: two.ExecutionID, TenantID: int(tenant.ID), Module: "develop", TaskType: "workflow", Source: "develop"}, execution.ClaimOptions{Module: "develop", TaskType: "workflow", WorkerID: "two-file-test", LeaseDuration: time.Minute, RequireAuthorization: true}, nil)
-			if err != nil || lease == nil {
-				t.Fatal("fully approved execution not claimed", err)
-			}
-			two.AdmissionState = "ready"
-			check.LeaseToken, check.Source = uuid.MustParse(lease.Token), &path
-			if _, access, err := svc.Check(ctx, check); err != nil || access == nil {
-				t.Fatal("source check after both approvals", err)
-			}
-			check.Source = nil
-			snapshotsBefore := targetSnapshots
-			t.Cleanup(func() { targetSnapshots = snapshotsBefore })
-			for index, approval := range obs.ApprovalIDs {
-				request := client.DevelopFilePublicationRequest{TargetIndex: index, ExecutionID: two.ExecutionID, Attempt: 1, LeaseToken: lease.Token, ScopeDigest: bound.ScopeDigest, ApprovalID: approval, OperationID: uuid.NewString(), Stage: client.DevelopFilePublicationPrepare}
-				two.Publications = append(two.Publications, client.DevelopFilePublicationFacts{ApprovalID: approval, Request: plugin.NewFilePublicationRequest{OperationID: request.OperationID, Target: bound.Scope.Targets[index].Target, SizeBytes: 8192, SHA256: strings.Repeat("a", 64)}})
-				other := request
-				other.ApprovalID = obs.ApprovalIDs[1-index]
-				if value, err := svc.AuthorizePublication(ctx, check, other); err == nil || value != nil {
-					t.Fatal("used sibling approval for own target")
-				}
-				if value, err := svc.AuthorizePublication(ctx, check, request); err != nil || value == nil || value.Engine == nil {
-					t.Fatal("missing original prepare", index, err)
-				}
-				request.Stage, request.PreparationDigest = client.DevelopFilePublicationRelease, strings.Repeat("b", 64)
-				two.Publications[index].PreparationDigest = request.PreparationDigest
-				if value, err := svc.AuthorizePublication(ctx, check, request); err != nil || value == nil || value.Engine != nil {
-					t.Fatal("missing original release", index, err)
-				}
-				history, err := svc.ReadPublicationHistory(ctx, check, uuid.MustParse(request.OperationID))
-				if err != nil || history == nil || history.ApprovalID != approval || history.ReleasedAt == nil {
-					t.Fatal("unbound per-file history", index, err)
-				}
-			}
-		})
+
 		for _, token := range []string{userToken, serviceToken, noPermission, noScope, foreign} {
 			if value, err := svc.ReadCreateApprovalContext(ctx, ReadDevelopFileCreateApprovalContextInput{UserAccessToken: token, ExecutionID: uuid.MustParse(facts.ExecutionID)}); err == nil || value != nil {
 				t.Fatal("unauthorized context disclosed")

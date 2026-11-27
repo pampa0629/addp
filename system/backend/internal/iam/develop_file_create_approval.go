@@ -352,12 +352,8 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 		record := developFileCreateApproval{TargetIndex: input.TargetIndex, ID: id, AuthorizationID: row.ID, ScopeDigest: input.ScopeDigest,
 			ApproverPrincipalID: approver.ActorPrincipalID, ApproverMembershipID: approver.TenantMembershipID,
 			ApproverAuthorizationVersion: approver.IssuedAuthorizationVersion, ApprovedAt: now, ExpiresAt: expires}
-		created := tx.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "authorization_id"}, {Name: "target_index"}}, DoNothing: true}).Create(&record)
-		if created.Error != nil {
-			return created.Error
-		}
-		if created.RowsAffected != 1 {
-			return ErrExecutionAuthorizationConflict
+		if err := insertDevelopFileDecision(tx.db.WithContext(ctx), &record); err != nil {
+			return err
 		}
 		audit := input.Audit
 		user, tenant := PrincipalTypeUser, ContextTypeTenant
@@ -388,4 +384,16 @@ func (s *DevelopFileAuthorizationService) ApproveCreate(ctx context.Context, inp
 		return nil, err
 	}
 	return receipt, nil
+}
+
+// Both approvals and publication preparations are single-use. Matched-row counts
+// from a conflict update cannot distinguish the original insert on MySQL.
+func insertDevelopFileDecision(db *gorm.DB, record any) error {
+	err := db.Create(record).Error
+	if err != nil {
+		if translator, ok := db.Dialector.(gorm.ErrorTranslator); ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey) {
+			return ErrExecutionAuthorizationConflict
+		}
+	}
+	return err
 }

@@ -37,8 +37,8 @@ func newFilePendingValues() (*commonexecution.TaskExecution, []commonexecution.D
 func fileIssuedFixture(t *testing.T, facts *commonclient.DevelopFileExecutionFacts) commonclient.IssuedDevelopFileAuthorization {
 	t.Helper()
 	var targetVersion []string
-	if len(facts.Intent.Targets) != 0 {
-		targetVersion = []string{"2"}
+	for range facts.Intent.Targets {
+		targetVersion = append(targetVersion, "2")
 	}
 	scope, err := commonexecution.NewDevelopBoundFileScope(facts.Intent, []commonexecution.DevelopFileSourceReference{{
 		Target: facts.Intent.Sources[0].Target, ItemFingerprint: strings.Repeat("a", 64), Format: "geopackage", BoundaryHash: strings.Repeat("b", 64), EngineVersion: "2"}}, targetVersion)

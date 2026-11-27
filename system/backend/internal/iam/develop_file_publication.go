@@ -13,7 +13,6 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type developFilePublication struct {
@@ -80,12 +79,8 @@ func (u *developFilePublicationUse) consume(ctx context.Context, tx *Repository,
 	db := tx.db.WithContext(ctx)
 	if request.Stage == client.DevelopFilePublicationPrepare {
 		record := developFilePublication{ApprovalID: approval, OperationID: operation, RequestDigest: requestDigest, LeaseDigest: lease, PrepareAdmittedAt: observed}
-		created := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&record)
-		if created.Error != nil {
-			return created.Error
-		}
-		if created.RowsAffected != 1 {
-			return ErrExecutionAuthorizationConflict
+		if err := insertDevelopFileDecision(db, &record); err != nil {
+			return err
 		}
 		if prepared.TargetSnapshot == nil {
 			return ErrDevelopFileDependencyUnavailable
@@ -104,7 +99,7 @@ func (u *developFilePublicationUse) consume(ctx context.Context, tx *Repository,
 		result.Engine = engine
 	} else {
 		changed := db.Model(&developFilePublication{}).
-			Where("approval_id=? AND operation_id=? AND request_digest=? AND lease_digest=? AND released_at IS NULL AND clock_timestamp() < ?", approval, operation, requestDigest, lease, expires).
+			Where("approval_id=? AND operation_id=? AND request_digest=? AND lease_digest=? AND released_at IS NULL AND "+tx.executionClockSQL()+" < ?", approval, operation, requestDigest, lease, expires).
 			Updates(map[string]any{"released_at": observed, "preparation_digest": request.PreparationDigest})
 		if changed.Error != nil {
 			return changed.Error

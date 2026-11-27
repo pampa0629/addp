@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
 	"github.com/addp/common/infra/bootstrap"
 	"github.com/addp/common/infra/database"
@@ -74,6 +75,7 @@ func TestInstalledDevelopTask(t *testing.T) {
 		}
 		t.Log("expired admission returned for observation; refreshed admission permitted exactly one claim")
 	})
+	t.Run("dual target worker admission", func(t *testing.T) { checkDualTargetWorkerClaim(t, db) })
 	t.Logf("task %d: tags and query definition read in tenant; catalog upsert observed", task.ID)
 }
 
@@ -122,5 +124,51 @@ func testInstalledFileWorkflowParent(t *testing.T, db *gorm.DB) {
 				t.Fatalf("%s left a rejected execution: count=%d err=%v", reason, count, err)
 			}
 		}
+	}
+}
+
+// Exercise the same candidate filter and lease acquisition as the workflow Worker.
+func checkDualTargetWorkerClaim(t *testing.T, db *gorm.DB) {
+	ctx := t.Context()
+	files := NewFileExecutionRepository(db)
+	queue := NewExecutionRepository(db)
+	item, sources := newFilePendingValues()
+	targets := []execution.DevelopFileTargetIntent{
+		{NodeID: "main", Target: plugin.FileItemPath(11, "outputs/main.gpkg"), Mode: "fail"},
+		{NodeID: "members", Target: plugin.FileItemPath(11, "outputs/members.gpkg"), Mode: "fail"},
+	}
+	facts, err := files.CreatePending(ctx, item, sources, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued := fileIssuedFixture(t, facts)
+	issued.Authorization.ID = "102"
+	if err := files.BindAuthorization(ctx, 7, item.ExecutionID, issued); err != nil {
+		t.Fatal(err)
+	}
+	facts, err = files.Read(ctx, 7, item.ExecutionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := fileAdmissionFixture(facts)
+	obs.AuthorizationID, obs.State = issued.Authorization.ID, "awaiting_approval"
+	if err := files.ApplyAdmission(ctx, 7, item.ExecutionID, obs); err != nil {
+		t.Fatal(err)
+	}
+	obs.State, obs.ApprovalIDs = "ready", []string{uuid.NewString()}
+	if err := files.ApplyAdmission(ctx, 7, item.ExecutionID, obs); err == nil {
+		t.Fatal("ready receipt accepted with only one approval for two targets")
+	}
+	claimed, lease, err := queue.ClaimNext("workflow", ctx, "two-file-worker", time.Now(), time.Minute, nil)
+	if err != nil || claimed != nil || lease != nil {
+		t.Fatalf("partial approvals allowed a claim: claimed=%v lease=%v err=%v", claimed != nil, lease != nil, err)
+	}
+	obs.ApprovalIDs = append(obs.ApprovalIDs, uuid.NewString())
+	if err := files.ApplyAdmission(ctx, 7, item.ExecutionID, obs); err != nil {
+		t.Fatal(err)
+	}
+	claimed, lease, err = queue.ClaimNext("workflow", ctx, "two-file-worker", time.Now(), time.Minute, nil)
+	if err != nil || lease == nil || claimed == nil || claimed.ExecutionID != item.ExecutionID {
+		t.Fatal("fully approved task did not receive its worker lease", err)
 	}
 }

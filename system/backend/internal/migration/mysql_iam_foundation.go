@@ -120,10 +120,19 @@ func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 }
 
 const mysqlExecutionAuthorizationOwner = "system_execution_authorization"
-const mysqlExecutionAuthorizationVersion = 3
+const mysqlExecutionAuthorizationVersion = 4
 
 //go:embed mysql_execution_authorization_update_v1.sql
 var executionAuthorizationUpdateV1 string
+
+//go:embed mysql_develop_file_sources_v3.sql
+var developFileSourcesV3 string
+
+//go:embed mysql_develop_file_paths.sql
+var developFilePaths string
+
+//go:embed mysql_develop_file_root_deadline.sql
+var developFileRootDeadline string
 
 //go:embed mysql_develop_file_guard.sql.tmpl
 var developFileGuardSQL string
@@ -244,6 +253,13 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 // Keep the v1 guards in force until all new triggers have been verified.
 // The final ALTER replaces both checks atomically, including on a resumed deployment.
 func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error {
+	var oldSources bool
+	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='develop_file_validate_sources')").Row().Scan(&oldSources); err != nil {
+		return err
+	}
+	if oldSources {
+		triggers = append(triggers, developFileSourcesV3)
+	}
 	guard, err := template.New("Develop file execution").Parse(developFileGuardSQL)
 	if err != nil {
 		return err
@@ -255,6 +271,7 @@ func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error 
 		}
 		triggers = append(triggers, sql.String())
 	}
+	triggers = append(triggers, developFilePaths, developFileRootDeadline)
 	var old bool
 	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='execution_authorization_validate_update')").Row().Scan(&old); err != nil {
 		return err
@@ -263,17 +280,17 @@ func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error 
 		if err := schema.CheckMySQLTriggers(conn, append([]string{executionAuthorizationUpdateV1}, triggers...)); err != nil {
 			return err
 		}
-		const retire = "DROP TRIGGER execution_authorization_validate_update"
-		if err := conn.Exec(retire).Error; err != nil {
-			var denied *mysqlDriver.MySQLError
-			if errors.As(err, &denied) && denied.Number == 1419 {
-				return &schema.PendingMySQLTriggers{Statements: []string{retire}}
-			}
+		if err := retireExecutionTrigger(conn, "DROP TRIGGER execution_authorization_validate_update"); err != nil {
 			return err
 		}
 	}
 	if err := schema.CheckMySQLTriggers(conn, triggers); err != nil {
 		return err
+	}
+	if oldSources {
+		if err := retireExecutionTrigger(conn, "DROP TRIGGER develop_file_validate_sources"); err != nil {
+			return err
+		}
 	}
 	var version string
 	if err := conn.Raw(`SELECT constraint_name FROM information_schema.table_constraints WHERE constraint_schema=DATABASE()
@@ -290,4 +307,13 @@ func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error 
         DROP CHECK ck_execution_authorization_audience, ADD CONSTRAINT ck_execution_authorization_audience_v2 CHECK (
             audience IN ('model','quality','develop','transfer','service','duckdb','spark','ontology')), ` + executionAuthorizationScope).Error
 	}
+}
+
+func retireExecutionTrigger(conn *gorm.DB, statement string) error {
+	err := conn.Exec(statement).Error
+	var denied *mysqlDriver.MySQLError
+	if errors.As(err, &denied) && denied.Number == 1419 {
+		return &schema.PendingMySQLTriggers{Statements: []string{statement}}
+	}
+	return err
 }
