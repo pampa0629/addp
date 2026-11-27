@@ -206,7 +206,9 @@ Runtime同路径bind写入与Meta真实NFS读取分别记录。所有退出路�
 
 四条成功链严格核完整像元／mask、Float64 NaN、单位、原 CRS／网格、COG、artifact／物理／Meta 相等正整数大小、精确父执行／普通用户／租户／引擎自动扫描、当前执行血缘和 Monitor。四条拒绝后均核无新增成果、扫描和派生血缘；独立 oracle、源物理／Meta 与先前成果不变贯穿全部执行。退出路径先停止本轮 Runtime，再核精确挂载源与 loop backing file，卸载、分离设备、删除镜像／占位文件和本轮归属目录，随后核 NFS、产品部署及 Infra 零残留；部分启动失败也必须清理，不允许以跳过或错误阶段充数。
 
-标准确定性入口为 `make test-raster-disk-pressure-online-runner`，由原 `make test-raster-online-runner` 聚合，覆盖隔离挂载归属、失败清理、8 条业务链和 CI 登记；GDAL 物理 oracle 与拒绝／恢复回归走 `make test-geopython-workflow`。本场景不新增并发抢盘或容量不可读取的 Hosted 故障注入，相关 Native 证据独立保留。独立入口与夹具已实现，本地 Native 全量、受影响场景复验及标准脚本聚合门禁通过；真实 Hosted 尚无已核验完整结果，首次源扫描准入待核。
+标准确定性入口为 `make test-raster-disk-pressure-online-runner`，由原 `make test-raster-online-runner` 聚合，覆盖隔离挂载归属、失败清理、8 条业务链和 CI 登记；GDAL 物理 oracle 与拒绝／恢复回归走 `make test-geopython-workflow`。本场景不新增并发抢盘或容量不可读取的 Hosted 故障注入，相关 Native 证据独立保留。本地专项通过。真实 Hosted 尚无已核验完整结果，首次源扫描准入待核。
+
+固定 `bee7f1578` 的 [Linux 全量](https://github.com/pampa0629/addp/actions/runs/45930939022/job/140283147245) 有 4 项因夹具调用旧诊断函数失败，其余 22,116 项通过。修复固定 `609807e28` 的 [共享 Execution Runner](https://github.com/pampa0629/addp/actions/runs/45931754887/job/140285731810) 实际通过 160 项登记测试及 42 项共享准备测试。同一源码的 [Linux Native](https://github.com/pampa0629/addp/actions/runs/45931754887/job/140285732200) 在 Ubuntu 24.04／GDAL 3.8.4 执行标准全量，22,120 项通过、141 条警告、1561.86 秒，失败、跳过和筛除均为 0。独立 NetCDF 专项另有 109 项通过。同一源码的[平台一致性](https://github.com/pampa0629/addp/actions/runs/45931754887/job/140285732081)实际执行预检和平台检查并通过。
 
 
 ## 水文与分区统计专项共同要求
