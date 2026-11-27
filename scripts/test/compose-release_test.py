@@ -2,6 +2,7 @@
 """Regression checks for immutable Compose images and production build boundaries."""
 
 import hashlib
+import importlib
 import importlib.util
 import json
 import os
@@ -17,6 +18,7 @@ from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location("compose_release", ROOT / "scripts/prod/release-images.py")
 release = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = release
@@ -41,12 +43,20 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             manager = json.loads(subprocess.check_output(
                 [*command, "--profile", "manager", "config", "--format", "json"], env=env,
             ))
+            develop = json.loads(subprocess.check_output(
+                [*command, "--profile", "develop-file", "config", "--format", "json"], env=env,
+            ))
         self.assertEqual(config["name"], "hosted-infra-test")
         self.assertEqual(config["networks"]["default"]["name"], "hosted-net")
         self.assertIn("minio", config["services"])
         self.assertNotIn("manager-search-redis", config["services"])
         self.assertNotIn("meilisearch", config["services"])
         self.assertNotIn("search-source", config["services"])
+        self.assertNotIn("geopython-workflow-engine", config["services"])
+        runtime = develop["services"]["geopython-workflow-engine"]
+        self.assertEqual(runtime["environment"]["SYSTEM_URL"], "http://system-backend:8180")
+        self.assertFalse(runtime.get("ports"))
+        self.assertFalse(runtime.get("volumes"))
         self.assertIn("meilisearch", manager["services"])
         source = manager["services"]["search-source"]
         self.assertEqual(source["environment"]["POSTGRES_DB"], "search_fixture")
@@ -90,12 +100,65 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("options: [gateway, service-lineage, manager]", events)
-        for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py"):
+        self.assertIn("options: [gateway, service-lineage, manager, develop-file]", events)
+        for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py", "mysql-develop-file-online.py"):
             probe = ROOT / "scripts/test" / name
             compile(probe.read_text(), str(probe), "exec")
         self.assertIn("\npermissions:\n  contents: read\n", workflow)
         self.assertIn(f"run: bash {entry.relative_to(ROOT)}", workflow)
+
+    def test_develop_probe_uses_business_pid_and_requires_an_unleased_original_row(self):
+        develop = importlib.import_module("scripts.test.mysql-develop-file-online")
+        raw = ("Name:\tserver\nUid:\t10001\t10001\t10001\t10001\nGid:\t10001\t10001\t10001\t10001\n"
+               "Groups:\t\nCapEff:\t0000000000000000\nNoNewPrivs:\t1")
+        with patch.object(develop, "command", return_value=raw) as run:
+            self.assertEqual(develop.develop_process_identity("container"),
+                             dict(pid=1, uid=10001, gid=10001, supplementary_groups=[],
+                                  effective_capabilities=0, no_new_privileges=True))
+            run.assert_called_once_with(["docker", "exec", "container", "cat", "/proc/1/status"])
+        for wrong in (raw.replace("server", "runtime-log"), raw.replace("10001", "0", 1), raw.replace("CapEff:\t0000000000000000", "CapEff:\t1")):
+            with patch.object(develop, "command", return_value=wrong), self.assertRaises(develop.SuiteError):
+                develop.develop_process_identity("container")
+        waiting = dict(status="pending", attempt=0, lease_absent=True, unstarted=True, admission_state="pending",
+                       admission_approval_ids=[], runtime_execution_id=None, authorization_id="7", runtime_status="-")
+        develop.verify_pending(waiting, "7")
+        for value in (dict(attempt=1), dict(lease_absent=False), dict(admission_approval_ids=["a"]), dict(authorization_id="8")):
+            with self.subTest(value=value), self.assertRaises(develop.SuiteError):
+                develop.verify_pending(waiting | value, "7")
+
+    def test_develop_nfs_exports_only_to_the_owned_bridge_and_loopback(self):
+        nfs = importlib.import_module("scripts.utils.online_nfs_fixture")
+        network = {"Name": "fixture-bridge", "Driver": "bridge", "Scope": "local",
+                   "Labels": {"com.docker.compose.project": "fixture-infra", "com.docker.compose.network": "default"},
+                   "IPAM": {"Config": [{"Subnet": "172.28.0.0/16", "Gateway": "172.28.0.1"}]}}
+        with tempfile.TemporaryDirectory() as work, tempfile.TemporaryDirectory(prefix="addp-develop-file-", dir="/tmp") as owned:
+            secret, root = Path(work).resolve(), Path(owned).resolve()
+            export = ""
+
+            def run(args, **kwargs):
+                nonlocal export
+                if args[:3] == ["docker", "network", "inspect"]:
+                    return json.dumps([network])
+                if args[:2] == ["sudo", "tee"]:
+                    export = kwargs["input"]
+                if args[:2] == ["showmount", "-e"]:
+                    return "Export list:\n" + export
+                if args == ["sudo", "exportfs", "-s"]:
+                    return export
+                return ""
+
+            fixture = nfs.NFSExport("develop-file", run, publication_staging=True)
+            with self.assertRaisesRegex(nfs.FixtureError, "owned Compose fixture bridge"):
+                fixture.lifecycle("start", secret, "develop-file-1-1", compose_bridge=("fixture-bridge", "wrong"))
+            with patch.object(nfs.tempfile, "mkdtemp", return_value=str(root)):
+                evidence = fixture.lifecycle("start", secret, "develop-file-1-1", compose_bridge=("fixture-bridge", "fixture-infra"))
+            self.assertEqual(evidence, {"started": True, "root_squash": True, "clients": ["127.0.0.1", "172.28.0.0/16"]})
+            _, loopback, bridge = export.split()
+            self.assertEqual(loopback, "127.0.0.1(rw,sync,no_subtree_check,insecure,root_squash)")
+            self.assertEqual(bridge, "172.28.0.0/16(rw,sync,no_subtree_check,insecure,root_squash)")
+            descriptor = json.loads((secret / "develop-file-nfs-engine.json").read_text())
+            self.assertEqual(descriptor["connection_info"]["server"], "172.28.0.1")
+            self.assertEqual((root / ".addp-publication").stat().st_mode & 0o7777, 0o700)
 
 
 class ReleaseVerificationTest(unittest.TestCase):

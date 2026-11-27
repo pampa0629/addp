@@ -1,4 +1,5 @@
 """Owned disposable Hosted NFS export lifecycle shared by spatial suites."""
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -48,7 +49,7 @@ class NFSExport:
             raise FixtureError('NFS root ownership mismatch')
         return root
 
-    def lifecycle(self, action, secret, run_id):
+    def lifecycle(self, action, secret, run_id, *, compose_bridge=None):
         state = secret / (self.prefix + '-root')
         export = Path('/etc/exports.d') / f'addp-{run_id}.exports'
         descriptor = secret / (self.prefix + '-nfs-engine.json')
@@ -57,30 +58,64 @@ class NFSExport:
         if action == 'start':
             if state.exists() or export.exists() or descriptor.exists() or self.command(['sudo', 'exportfs', '-s']):
                 raise FixtureError('refusing existing state or NFS exports')
+            server = '127.0.0.1'
+            clients = [server]
+            if compose_bridge is not None:
+                name, project = compose_bridge
+                network, = json.loads(self.command(['docker', 'network', 'inspect', name]))
+                labels = network.get('Labels') or {}
+                if (network.get('Name') != name or network.get('Driver') != 'bridge' or network.get('Scope') != 'local'
+                        or labels.get('com.docker.compose.project') != project
+                        or labels.get('com.docker.compose.network') != 'default'):
+                    raise FixtureError('NFS requires the owned Compose fixture bridge')
+                private_ranges = tuple(map(ipaddress.ip_network, ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16')))
+                address, = network['IPAM']['Config']
+                subnet = ipaddress.IPv4Network(address['Subnet'])
+                gateway = ipaddress.IPv4Address(address['Gateway'])
+                if (not any(subnet.subnet_of(private) for private in private_ranges) or gateway not in subnet
+                        or gateway in (subnet.network_address, subnet.broadcast_address)):
+                    raise FixtureError('NFS requires a private IPv4 bridge subnet and gateway')
+                server = str(gateway)
+                clients.append(str(subnet))
             root = Path(tempfile.mkdtemp(prefix='addp-' + self.prefix + '-', dir='/tmp'))
             state.write_text(str(root)); state.chmod(0o600)
             (root / '.addp-online-owner').write_text(run_id)
             root.chmod(0o755); (root / 'outputs').mkdir(mode=0o755)
             source = root / self.source_subdirectory if self.source_subdirectory else root
             if source != root: source.mkdir(mode=0o755)
-            connection = {'server': '127.0.0.1', 'export_path': str(source)}
+            connection = {'server': server, 'export_path': str(source)}
             if self.publication_staging:
                 stage = source / '.addp-publication'
                 stage.mkdir(mode=0o700)
                 stage.chmod(0o700)
                 connection['publication_staging_path'] = stage.name
             self.command(['sudo', 'mkdir', '-p', str(export.parent)])
-            self.command(['sudo', 'tee', str(export)], input=f'{source} 127.0.0.1({self.access_mode},sync,no_subtree_check,insecure,root_squash)\n')
+            options = f'({self.access_mode},sync,no_subtree_check,insecure,root_squash)'
+            self.command(['sudo', 'tee', str(export)], input=f"{source} {' '.join(client + options for client in clients)}\n")
             self.command(['sudo', 'systemctl', 'start', 'rpcbind.service', 'nfs-kernel-server.service'])
             self.command(['sudo', 'exportfs', '-ra'])
             if str(source) not in [line.split()[0] for line in self.command(['showmount', '-e', '127.0.0.1']).splitlines()[1:]]:
                 raise FixtureError('NFS export not discoverable')
+            evidence = {'started': True}
+            if compose_bridge is not None:
+                active = self.command(['sudo', 'exportfs', '-s']).splitlines()
+                observed = {}
+                for line in active:
+                    path, *exports = line.split()
+                    if path != str(source):
+                        raise FixtureError('unexpected active NFS export path')
+                    for target in exports:
+                        client, _, flags = target.partition('(')
+                        observed[client] = set(flags.removesuffix(')').split(','))
+                if set(observed) != set(clients) or any('root_squash' not in flags for flags in observed.values()):
+                    raise FixtureError('active NFS export clients or root squash differ from fixture')
+                evidence.update(root_squash=True, clients=clients)
             with descriptor.open('x') as stream:
                 descriptor.chmod(0o600)
                 json.dump({'name': f'Hosted {self.prefix} NFS', 'description': 'Disposable spatial persistence T4 fixture',
                     'engine_type': 'nfs', 'engine_origin': 'general',
                     'connection_info': connection}, stream)
-            return {'started': True}
+            return evidence
         if action != 'stop':
             raise FixtureError('unknown NFS lifecycle action')
         if not state.exists():

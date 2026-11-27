@@ -15,6 +15,7 @@ case "${ADDP_MYSQL_ONLINE_SUITE:-gateway}" in
   gateway) ;;
   service-lineage) ADDP_DEPLOYMENT_MODULES=service; schemas+=(service) ;;
   manager) ADDP_DEPLOYMENT_MODULES=manager,security; schemas+=(manager security) ;;
+  develop-file) ADDP_DEPLOYMENT_MODULES=develop,security; schemas+=(develop security) ;;
   *) echo "unknown Hosted MySQL suite" >&2; exit 2 ;;
 esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -35,6 +36,11 @@ mkdir -p "$artifacts"
 work=$(mktemp -d "${RUNNER_TEMP:?}/addp-mysql-platform.XXXXXXXX")
 export ADDP_ONLINE_SECRET_DIR="$work"
 export ADDP_MYSQL_FIXTURE_PROJECT="$ADDP_DEPLOYMENT_PROJECT-infra"
+if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
+  export ADDP_ONLINE_HOST=1 ADDP_ONLINE_HOSTED=1
+  export ADDP_ONLINE_TEST_RUN_ID="develop-file-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+  export GEOPYTHON_FIXTURE_TAG="hosted-${GITHUB_SHA}"
+fi
 fixture_compose=(docker compose --env-file /dev/null -f "$work/compose.yml")
 fixture() { "${fixture_compose[@]}" "$@"; }
 app=(docker compose --env-file .env -f scripts/prod/system-meta-gateway.yml)
@@ -75,6 +81,9 @@ for message in sorted(messages):
   fi
   if [ "$infra_started" = true ]; then
     fixture down --volumes --remove-orphans || cleanup_status=failed
+  fi
+  if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
+    python3 -m scripts.test.mysql-develop-file-online stop-nfs > "$artifacts/develop-nfs-cleanup.json" || cleanup_status=failed
   fi
   for project in "$ADDP_DEPLOYMENT_PROJECT" "$ADDP_MYSQL_FIXTURE_PROJECT"; do
     remaining=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || cleanup_status=failed
@@ -201,6 +210,19 @@ services:
       interval: 3s
       timeout: 4s
       retries: 30
+  geopython-workflow-engine:
+    profiles: [develop-file]
+    image: localhost:5001/addp-geopython-workflow-engine:${GEOPYTHON_FIXTURE_TAG:-unused}
+    environment:
+      RUNTIME_HOST: geopython-workflow-engine
+      PORT: "8099"
+      SYSTEM_URL: http://system-backend:8180
+      GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET: ${GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 36
   registry:
     image: registry:2
     ports: ["127.0.0.1:5001:5000"]
@@ -319,6 +341,13 @@ if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then
   export ADDP_TEST_LINEAGE_PUBLISHER_PASSWORD
   ADDP_TEST_LINEAGE_PUBLISHER_PASSWORD=$(openssl rand -hex 24)
 fi
+if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
+  export ADDP_TEST_MYSQL_DEVELOP_FILE_FACTS="$work/develop-file-tenant.json"
+  export ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD
+  ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD=$(openssl rand -hex 24)
+  ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD=$(openssl rand -hex 24)
+  ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD=$(openssl rand -hex 24)
+fi
 make build-iam-bootstrap
 ln -s "$PWD/dist/release-linux-amd64/addp-iam-bootstrap" "$work/iam-bootstrap"
 ADDP_MYSQL_HOST=127.0.0.1 ADDP_MYSQL_PORT="$ADDP_TEST_MYSQL_PORT" \
@@ -436,5 +465,19 @@ fi
 if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
   stage=manager-search-cursor
   python3 scripts/test/mysql-manager-search-online.py "$work" "$artifacts"
+fi
+if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
+  stage=develop-runtime
+  export GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET
+  GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET=$(source .env && printf '%s' "$GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET")
+  [[ "$GEOPYTHON_WORKFLOW_SERVICE_CLIENT_SECRET" =~ ^[0-9a-f]{64}$ ]]
+  make build-images IMAGE_BUILD_ARGS="--services geopython-workflow-engine --tag $GEOPYTHON_FIXTURE_TAG --verify --jobs 1" </dev/null
+  fixture_compose+=(--profile develop-file)
+  fixture up -d --wait --wait-timeout 240 geopython-workflow-engine
+  stage=develop-file-publication
+  export ADDP_TEST_MYSQL_CONTAINER="$(fixture ps -q mysql)"
+  export ADDP_TEST_GEOPYTHON_CONTAINER="$(fixture ps -q geopython-workflow-engine)"
+  export ADDP_TEST_DEVELOP_CONTAINER="$("${app[@]}" ps -q develop-backend)"
+  python3 -m scripts.test.mysql-develop-file-online run "$artifacts"
 fi
 stage=complete

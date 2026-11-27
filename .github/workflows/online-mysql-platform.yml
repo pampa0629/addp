@@ -7,7 +7,7 @@ on:
         description: Isolated release scenario
         type: choice
         default: gateway
-        options: [gateway, service-lineage, manager]
+        options: [gateway, service-lineage, manager, develop-file]
 
 permissions:
   contents: read
@@ -34,6 +34,12 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .node-version
+
+      - name: Install NFS fixture dependencies
+        if: inputs.suite == 'develop-file'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nfs-kernel-server nfs-common
 
       - name: Run Hosted MySQL limited release
         env:

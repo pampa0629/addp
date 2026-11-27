@@ -176,6 +176,11 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 		assignMySQLFixtureRole(t, repo, tenant.ID, admin.PrincipalID, operator.PrincipalID,
 			"tenant.data_steward", "tenant.engine_lifecycle_operator", "tenant.engine_access_delegation_administrator")
 	}
+	if fileFacts := os.Getenv("ADDP_TEST_MYSQL_DEVELOP_FILE_FACTS"); fileFacts != "" {
+		t.Run("DevelopFilePublicationTenant", func(t *testing.T) {
+			prepareMySQLDevelopFileTenant(t, repo, creator, fileFacts)
+		})
+	}
 	t.Run("ExecutionAuthorization", func(t *testing.T) {
 		testMySQLExecutionAuthorization(t, db, tenant.ID, admin.PrincipalID)
 	})
@@ -184,6 +189,89 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, facts, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func prepareMySQLDevelopFileTenant(t *testing.T, repo *iam.Repository, creator int64, path string) {
+	t.Helper()
+	ctx := t.Context()
+	identities := iam.NewIdentityService(repo, nil)
+	admin, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{
+		Username: "develop-file-admin", DisplayName: "Develop file fixture administrator", Password: rand.Text(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant, err := iam.NewPlatformTenantService(repo, nil).Create(ctx, iam.CreateTenantInput{
+		Code: "mysql-develop-file", Name: "MySQL Develop file fixture", ActorPrincipalID: creator, InitialAdministratorPrincipalID: admin.PrincipalID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tenant.ID <= 1 {
+		t.Fatal("Develop file publication requires a nondefault fixture tenant")
+	}
+	users := []struct {
+		name, passwordEnv, builtinRole string
+		permissions                    []string
+	}{
+		{"develop-file-actor", "ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD", "", []string{
+			"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
+			"system.execution_authorization.create", "meta.catalog.read",
+		}},
+		{"develop-file-approver", "ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD", "tenant.engine_access_delegation_administrator", []string{
+			"meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create",
+		}},
+		{"develop-file-registrar", "ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD", "tenant.engine_lifecycle_operator", nil},
+	}
+	facts := map[string]int64{"tenant_id": tenant.ID}
+	members := iam.NewTenantMembershipService(repo, nil)
+	roles := iam.NewTenantRoleService(repo, nil)
+	for _, fixture := range users {
+		user, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{
+			Username: fixture.name, DisplayName: fixture.name, Password: os.Getenv(fixture.passwordEnv),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		facts[fixture.name] = user.PrincipalID
+		membership, err := members.EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
+			TenantID: tenant.ID, PrincipalID: user.PrincipalID, SourceType: iam.TenantMembershipSourceManual, CreatedByPrincipalID: &admin.PrincipalID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var roleIDs []int64
+		if fixture.builtinRole != "" {
+			role, err := repo.GetActiveBuiltinRoleByKey(ctx, fixture.builtinRole)
+			if err != nil {
+				t.Fatal(err)
+			}
+			roleIDs = append(roleIDs, role.ID)
+		}
+		if len(fixture.permissions) != 0 {
+			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{
+				TenantID: tenant.ID, RoleKey: "online." + strings.ReplaceAll(fixture.name, "-", "_"), Name: fixture.name,
+				PermissionKeys: fixture.permissions, ActorPrincipalID: admin.PrincipalID,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			roleIDs = append(roleIDs, role.ID)
+		}
+		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
+			TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: roleIDs, ActorPrincipalID: admin.PrincipalID,
+			Reason: "Disposable MySQL Develop file publication acceptance",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	encoded, err := json.Marshal(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0600); err != nil {
 		t.Fatal(err)
 	}
 }
