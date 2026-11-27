@@ -4343,3 +4343,52 @@ class WorkflowProcessFailureOnlineTest(unittest.TestCase):
                     execution['triggered_by'] = 9
                 with self.assertRaises(m.SuiteError):
                     m.validate_process_failure(execution, logs, self.definition, 'run-once', 4)
+
+    def test_source_preparation_is_separate_and_revoked_even_on_business_failure(self):
+        registration = importlib.import_module('scripts.test.online-engine-registration')
+        consumer, initializer = object(), object()
+        events = []
+
+        class ExactReadGrants:
+            operator = '42'
+
+            def __init__(self, authorizer, actor, tenant, *, scan_preparation, on_change):
+                assert authorizer is initializer and actor is consumer and tenant == 2 and scan_preparation is True
+                self.on_change = on_change
+
+            def grant(self, engine, name):
+                events.append(('grant', engine, name))
+                self.on_change([{'request_id': 'exact-source'}])
+                return {'request_id': 'exact-source', 'action': 'read'}
+
+            def cleanup(self):
+                events.append(('cleanup',))
+                self.on_change([])
+                return {'grants_revoked': True, 'content_reads_denied': True}
+
+        def scan(client, engine, deadline, *, depth, scope):
+            assert client is initializer and engine == 3
+            events.append((depth, scope['targets'][0]))
+            return depth
+
+        def fail(repository, environment, client, *args):
+            assert client is consumer
+            events.append(('business',))
+            raise m.SuiteError('primary business failure')
+
+        with tempfile.TemporaryDirectory() as directory:
+            env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID': '3',
+                   'ADDP_ONLINE_TEST_RUN_ID': 'topology-process', 'ADDP_ONLINE_ARTIFACT_DIR': directory,
+                   'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'synthetic', 'GATEWAY_URL': 'https://example.invalid'}
+            with patch.object(registration, 'ExactFileReadGrants', ExactReadGrants), \
+                 patch.object(m.raster, 'validate_identity', return_value={'principal_id': '4'}), \
+                 patch.object(m.raster, 'GatewayClient', return_value=initializer), \
+                 patch.object(m.support, 'wait_for_meta_scan', side_effect=scan), \
+                 patch.object(m, 'scan_ids', return_value=['basic', 'deep']), \
+                 patch.object(m, 'inspect_process_failure', side_effect=fail):
+                with self.assertRaisesRegex(m.SuiteError, 'primary business failure'):
+                    m.run_process_failure(None, env, consumer, None, None)
+                proof = json.loads((Path(directory) / 'topology-workflow-process-source.json').read_text())
+            self.assertEqual([row[0] for row in events], ['basic', 'grant', 'deep', 'business', 'cleanup'])
+            self.assertEqual(proof['pending_grants'], [])
+            self.assertTrue(proof['cleanup']['content_reads_denied'])

@@ -2595,6 +2595,7 @@ def validate_vector_topology_profile(repository: Path, registered: set[str]) -> 
         'scripts/test/online-hosted-topology-gate.sh': ('workflow-process-failure|vertex-extraction',),
         'business/scripts/online-vector-topology-fixture.py': ('def process_worker(',),
         'scripts/test/vector-topology-persistence-online.py': ('def run_process_failure(', 'def validate_process_failure('),
+        'system/backend/cmd/online-test-fixture/main.go': ('case "workflow-process-failure":',),
         'console/frontend/e2e/online/vector-topology-persistence.spec.js': ('同一普通用户执行核对加工过程定义连线和实际节点证据',
             'topology-workflow-process-browser-raw.json'),
         'scripts/test/vector-topology-persistence-online_test.py': ('class WorkflowProcessFailureOnlineTest',),

@@ -144,7 +144,50 @@ def run_process_failure(repository, env, client, physical_runner, browser_runner
     engine = positive(env['ADDP_ONLINE_TOPOLOGY_NFS_ENGINE_ID'], 'NFS engine')
     name = fixture.PROCESS_SOURCE
     scope = f'addp://engine/{engine}/path/{name}?type=file'
-    scan = support.wait_for_meta_scan(client, engine, deadline, scope={'targets': [scope]})
+    registration = importlib.import_module('scripts.test.online-engine-registration')
+    token = env.get('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN')
+    if not token:
+        raise SuiteError('workflow process requires the separate source initializer')
+    initializer = raster.GatewayClient(env['GATEWAY_URL'], token, 30)
+    path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-workflow-process-source.json'
+    preparation = {'result': 'incomplete', 'case': fixture.PROCESS_CASE,
+                   'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'source': name}
+    def record():
+        path.write_text(json.dumps(preparation, ensure_ascii=False, indent=2) + '\n')
+    def pending(rows):
+        preparation['pending_grants'] = list(rows)
+        record()
+    grants = registration.ExactFileReadGrants(initializer, client, tenant, scan_preparation=True, on_change=pending)
+    preparation['initializer_id'] = grants.operator
+    try:
+        basic = support.wait_for_meta_scan(initializer, engine, deadline, depth='basic', scope={'targets': [scope]})
+        preparation['basic_scan'] = basic
+        preparation['grant'] = grants.grant(engine, name)
+        record()
+        deep = support.wait_for_meta_scan(initializer, engine, deadline, depth='deep', scope={'targets': [scope]})
+        preparation['deep_scan'] = deep
+        expected_scans = sorted([basic, deep])
+        if basic == deep or scan_ids(initializer) != expected_scans:
+            raise SuiteError('workflow process preparation scan inventory differs')
+        record()
+        result = inspect_process_failure(repository, env, client, physical_runner, browser_runner,
+                                         identity, deadline, engine, name, scope)
+        if scan_ids(initializer) != expected_scans:
+            raise SuiteError('workflow process unexpectedly changed the initialization scan inventory')
+    except BaseException as primary:
+        try:
+            preparation['cleanup'] = grants.cleanup()
+            record()
+        except Exception as secondary:
+            primary.add_note(f'workflow process source Grant cleanup failed: {type(secondary).__name__}')
+        raise
+    preparation['cleanup'] = grants.cleanup()
+    preparation['result'] = 'passed'
+    record()
+    return result
+
+
+def inspect_process_failure(repository, env, client, physical_runner, browser_runner, identity, deadline, engine, name, scope):
     item = support.find_fixture_item(client, engine, name, 'workflow process source')
     path = f'/api/v1/meta/items/{item["id"]}'
     meta = client.request('GET', path, (200,)).payload
@@ -159,10 +202,10 @@ def run_process_failure(repository, env, client, physical_runner, browser_runner
     scans = scan_ids(client)
     native = physical_runner(repository, env)
     size = native.get('sources', {}).get(name, {}).get('size_bytes')
-    if (scans != [scan] or tasks.get('total') != 0 or tasks.get('items') not in (None, [])
+    if (scans or tasks.get('total') != 0 or tasks.get('items') not in (None, [])
             or native.get('exact_inventory_verified') is not True or set(native.get('sources', {})) != {name}
             or native.get('targets') != {} or type(size) is not int or size <= 0
-            or type(meta.get('size_bytes')) is not int or meta['size_bytes'] != size):
+            or meta.get('id') != item['id'] or meta.get('full_name') != name):
         raise SuiteError('workflow process preflight inventory differs')
     definition = process_failure_definition(scope + f'&item_id={item["id"]}')
     checkpoint_path = Path(env['ADDP_ONLINE_ARTIFACT_DIR']) / 'topology-workflow-process-checkpoint.json'
@@ -189,7 +232,9 @@ def run_process_failure(repository, env, client, physical_runner, browser_runner
     validate_process_failure(execution, logs, definition, identifier, positive(identity['principal_id'], 'User'))
     evidence = {'case': case, 'run_id': checkpoint['run_id'], **identity, 'execution_id': identifier,
                 'process': execution['workflow_process'], 'logs': logs, 'error_details': execution['error_details']}
-    report = browser_runner(repository, env, evidence)
+    browser_env = dict(env)
+    browser_env.pop('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', None)
+    report = browser_runner(repository, browser_env, evidence)
     final_executions = workflow_execution_inventory(client)
     final_tasks = client.request('GET', tasks_path, (200,)).payload
     final_scans = scan_ids(client)

@@ -149,6 +149,8 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 		}
 		switch os.Getenv("ADDP_ONLINE_TOPOLOGY_CASE") {
+		case "workflow-process-failure":
+			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 		case "geometry-difference", "polygon-adjacency", "polygon-components", "intersection-overlay", "line-nodes", "vertex-extraction", "polygon-dissolve":
 			return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create")
 		}

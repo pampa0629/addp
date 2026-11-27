@@ -2299,6 +2299,19 @@ func TestFilePublicationSourceInitializerHasOnlyPreparationAndApprovalPermission
 	}
 }
 
+func TestWorkflowProcessFailureUsesReadOnlySourceInitializer(t *testing.T) {
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", "workflow-process-failure")
+	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "0")
+	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+	if got := suiteSourceInitializerPermissions("vector-topology-persistence"); !slices.Equal(got, want) {
+		t.Fatalf("workflow process initializer permissions: %v", got)
+	}
+	consumer, err := suitePermissions("vector-topology-persistence")
+	if err != nil || !slices.Equal(consumer, append(slices.Clone(rasterWorkflowPermissions), "manager.data_item.read")) || len(consumer) != 11 {
+		t.Fatal("workflow process consumer permissions changed", consumer, err)
+	}
+}
+
 func TestLineNodesLineageUsesReadOnlyInitializer(t *testing.T) {
 	t.Setenv("ADDP_ONLINE_TOPOLOGY_CASE", "line-nodes")
 	t.Setenv("ADDP_ONLINE_TOPOLOGY_LINEAGE_PERMISSIONS", "1")
