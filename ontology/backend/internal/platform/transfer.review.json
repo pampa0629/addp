@@ -34,11 +34,11 @@
       "kind": "implementation",
       "path": "transfer/backend/internal/service/task_service.go",
       "anchor": "Status:       models.TaskStatusIdle,",
-      "commit": "4da68f6620c381e05386c80e86f7859617fb95a9",
-      "sha256": "1990df711492c1b866c688c4c174c87ae571cd561dd6606d1e022d6e7b420a6b",
+      "commit": "a42f28aabfeb869ec2ca4088b85229a3f6bd53a3",
+      "sha256": "b632f796d593b77dff972f8c2b3c94bd12d18051b913910e85049dd51498276f",
       "use": {
-        "zh-cn": "普通任务定义拒绝提交服务端专用 object_source。手动执行阶段按精确 RustFS 对象办理授权；仍先保存 idle 原生表任务。查询来源和数据库 CDC 配置校验只读租户引擎描述。",
-        "en": "Ordinary definitions reject submitted server-owned object_source. The manual start stage obtains exact RustFS object authorization; native task creation still persists idle definitions. Query-source and database CDC validation reads only tenant engine descriptors."
+        "zh-cn": "普通任务定义拒绝提交服务端专用 object_source。手动执行阶段按精确 RustFS 对象办理授权；仍先保存 idle 原生表任务。查询来源和数据库 CDC 配置校验只读租户引擎描述。CDC 新增字段审批区分源结构复核与目标连接使用。",
+        "en": "Ordinary definitions reject submitted server-owned object_source. The manual start stage obtains exact RustFS object authorization; native task creation still persists idle definitions. Query-source and database CDC validation reads only tenant engine descriptors. CDC additive field approval separates source schema inspection from target connection use."
       }
     },
     {
