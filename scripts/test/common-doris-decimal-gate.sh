@@ -155,7 +155,7 @@ esac
 
 seed_consumer() {
     reader_password=$(openssl rand -hex 24)
-    docker exec -i "$CONTAINER_NAME" mysql -h127.0.0.1 -P9030 -uroot > /dev/null 2>"$WORK_DIR/seed-error.log" <<SQL
+    if ! docker exec -i "$CONTAINER_NAME" mysql -h127.0.0.1 -P9030 -uroot > /dev/null 2>"$WORK_DIR/seed-error.log" <<SQL
 CREATE DATABASE business;
 CREATE TABLE business.source (id INT NOT NULL, optional_text STRING NULL) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1');
 CREATE TABLE business.customers (id INT NOT NULL, optional_text STRING NULL) DUPLICATE KEY(id) DISTRIBUTED BY HASH(id) BUCKETS 1 PROPERTIES('replication_num'='1');
@@ -165,6 +165,11 @@ CREATE USER business_reader IDENTIFIED BY '$reader_password';
 GRANT SELECT_PRIV ON business.source TO business_reader;
 GRANT SELECT_PRIV ON business.customers TO business_reader;
 SQL
+    then
+        echo 'Doris isolated consumer seed failed' >&2
+        sed "s/$reader_password/[redacted]/g" "$WORK_DIR/seed-error.log" >&2
+        return 1
+    fi
 }
 
 if [ "$MODE" = online-start ]; then
