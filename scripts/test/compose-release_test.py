@@ -46,6 +46,9 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             develop = json.loads(subprocess.check_output(
                 [*command, "--profile", "develop-file", "config", "--format", "json"], env=env,
             ))
+            quality = json.loads(subprocess.check_output(
+                [*command, "--profile", "quality-worker", "config", "--format", "json"], env=env,
+            ))
         self.assertEqual(config["name"], "hosted-infra-test")
         self.assertEqual(config["networks"]["default"]["name"], "hosted-net")
         self.assertIn("minio", config["services"])
@@ -53,6 +56,11 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         self.assertNotIn("meilisearch", config["services"])
         self.assertNotIn("search-source", config["services"])
         self.assertNotIn("geopython-workflow-engine", config["services"])
+        self.assertNotIn("quality-source", config["services"])
+        quality_source = quality["services"]["quality-source"]
+        self.assertEqual(quality_source["environment"]["POSTGRES_DB"], "quality_fixture")
+        self.assertFalse(quality_source.get("ports"))
+        self.assertEqual(quality_source["volumes"][0]["source"], "quality-source-data")
         runtime = develop["services"]["geopython-workflow-engine"]
         self.assertEqual(runtime["environment"]["SYSTEM_URL"], "http://system-backend:8180")
         self.assertFalse(runtime.get("ports"))
@@ -77,17 +85,18 @@ class HostedMySQLReleaseTest(unittest.TestCase):
             "ADDP_OBSERVABILITY_LOGS_ENABLED",
         )
         env = dict(os.environ, **dict.fromkeys(keys, "fixture"))
-        env.update(ADDP_INFRA_DATABASE_PROVIDER="mysql", NGINX_PORT="18080", REDIS_HOST="redis", REDIS_PORT="6379",
-                   ADDP_DATABASE_DEPLOY_PASSWORD="deploy-fixture-only")
+        env.update(ADDP_INFRA_DATABASE_PROVIDER="mysql", ADDP_DEPLOYMENT_MODULES="quality,monitor", TZ="UTC",
+                   NGINX_PORT="18080", REDIS_HOST="redis", REDIS_PORT="6379", ADDP_DATABASE_DEPLOY_PASSWORD="deploy-fixture-only")
         with tempfile.TemporaryDirectory() as work:
             path = Path(work, ".env")
-            path.write_text("ADDP_INFRA_DATABASE_PROVIDER=postgres\nNGINX_PORT=80\nREDIS_HOST=localhost\nREDIS_PORT=16379\n")
+            path.write_text("ADDP_INFRA_DATABASE_PROVIDER=postgres\nNGINX_PORT=80\nREDIS_HOST=localhost\nREDIS_PORT=16379\nTZ=Asia/Shanghai\n")
             subprocess.run([sys.executable, "-c", env_writer], cwd=work, env=env, check=True)
             sourced = subprocess.check_output(
                 ["bash", "-ec", 'source .env; printf "%s %s %s:%s" "$ADDP_INFRA_DATABASE_PROVIDER" "$NGINX_PORT" "$REDIS_HOST" "$REDIS_PORT"'],
                 cwd=work, text=True,
             )
             self.assertEqual(sourced, "mysql 18080 redis:6379")
+            self.assertIn("\nTZ=UTC\n", path.read_text())
             self.assertNotIn("ADDP_DATABASE_DEPLOY_", path.read_text())
 
     def test_manual_hosted_gate_shell_and_python_syntax(self):
@@ -100,8 +109,9 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/online-mysql-platform.yml").read_text()
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
-        self.assertIn("options: [gateway, service-lineage, manager, develop-file]", events)
-        for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py", "mysql-develop-file-online.py"):
+        self.assertIn("options: [gateway, service-lineage, manager, develop-file, quality-worker]", events)
+        for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py", "mysql-develop-file-online.py",
+                     "mysql-quality-worker-online.py"):
             probe = ROOT / "scripts/test" / name
             compile(probe.read_text(), str(probe), "exec")
         self.assertIn("\npermissions:\n  contents: read\n", workflow)
@@ -146,6 +156,18 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         for value in (dict(approval=first["approval"]), dict(state="approved"), dict(execution_id="other")):
             with self.subTest(value=value), self.assertRaises(develop.SuiteError):
                 develop.verify_one_approval(first, second | value, "original", "receipt", ("7", "authority"))
+
+    def test_quality_requires_the_original_live_worker_claim(self):
+        hosted = importlib.import_module("scripts.test.mysql-quality-worker-online")
+        shared = importlib.import_module("scripts.utils.hosted_mysql_platform")
+        running = dict(execution_id="original", status="running", attempt=1, source_task_id="7", triggered_by=21,
+                       authorized=1, lease_present=1, lease_live=1, started_at="start", completed_at=None,
+                       worker_instance="quality-fixture", worker_owner="quality-fixture-1")
+        hosted.verify_live_claim(running, "original", 7, 21)
+        for change in (dict(execution_id="different"), dict(attempt=2), dict(lease_live=0), dict(worker_owner="other-1"),
+                       dict(worker_instance=None), dict(triggered_by=22), dict(worker_owner="quality-fixture-extra")):
+            with self.subTest(change=change), self.assertRaises(shared.SuiteError):
+                hosted.verify_live_claim(running | change, "original", 7, 21)
 
     def test_develop_nfs_exports_only_to_the_owned_bridge_and_loopback(self):
         nfs = importlib.import_module("scripts.utils.online_nfs_fixture")

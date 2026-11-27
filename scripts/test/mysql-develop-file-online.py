@@ -3,18 +3,16 @@ import importlib
 import json
 import os
 from pathlib import Path
-import re
-import subprocess
 import sys
 import time
 import uuid
 
 from scripts.utils.online_nfs_fixture import NFSExport
+from scripts.utils.hosted_mysql_platform import SuiteError, command, login, mysql_read, owned_container, require
 
 topology = importlib.import_module('scripts.test.vector-topology-persistence-online')
 registration = importlib.import_module('scripts.test.online-engine-registration')
 raster, fixture, support = topology.raster, topology.fixture, topology.support
-SuiteError = raster.SuiteError
 PROFILE = fixture.network_profile(fixture.NORMALIZE_CASE)
 ACTOR_PERMISSIONS = {
     'develop.task.read', 'develop.task.execute', 'develop.data_read.execute', 'develop.data_write.execute',
@@ -22,41 +20,6 @@ ACTOR_PERMISSIONS = {
 }
 WRONG_OWNER_TARGET = 'wrong-owner.gpkg'
 UNAPPROVED_TARGET = 'not-approved.gpkg'
-
-
-def command(args, *, input=None, env=None):
-    return subprocess.run(args, input=input, env=env, text=True, check=True,
-                          stdout=subprocess.PIPE, timeout=90).stdout.strip()
-
-
-def require(condition, message):
-    if not condition:
-        raise SuiteError(message)
-
-
-def login(name, password, principal, tenant):
-    origin = os.environ['ADDP_PUBLIC_ORIGIN']
-    client = raster.GatewayClient(origin, '', 20)
-    result = client.request('POST', '/api/v1/system/login', (200,), {'username': name, 'password': password},
-                            headers={'Origin': origin, 'Authorization': ''}).payload
-    require(result.get('next_action') == 'session_issued', f'{name} did not receive a session')
-    client.token = result['session']['access_token']
-    auth = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
-    require(auth['principal']['type'] == 'user' and auth['principal']['id'] == str(principal)
-            and auth['context']['type'] == 'tenant' and auth['context']['tenant_id'] == str(tenant),
-            f'{name} signed into the wrong tenant or principal')
-    return client
-
-
-def owned_container(name, project, service, network):
-    identifier = os.environ[name]
-    require(re.fullmatch(r'[0-9a-f]{64}', identifier), f'{service}: invalid container identity')
-    info, = json.loads(command(['docker', 'inspect', identifier]))
-    labels = info['Config']['Labels']
-    require(info['State']['Running'] and labels.get('com.docker.compose.project') == project
-            and labels.get('com.docker.compose.service') == service
-            and set(info['NetworkSettings']['Networks']) == {network}, f'{service}: foreign container')
-    return info
 
 
 def develop_process_identity(container):
@@ -75,7 +38,6 @@ def develop_process_identity(container):
 def file_snapshot(mysql, tenant, execution):
     require(str(uuid.UUID(execution)) == execution, 'invalid Develop execution identity')
     query = f"""
-SET SESSION TRANSACTION READ ONLY;
 SELECT e.status, e.attempt, e.lease_token IS NULL, e.started_at IS NULL, f.admission_state,
        COALESCE(JSON_EXTRACT(f.admission_json, '$.approval_ids'), JSON_ARRAY()),
        COALESCE(f.runtime_execution_id, ''), COALESCE(e.execution_authorization_id, 0),
@@ -84,9 +46,7 @@ FROM common.task_executions e JOIN develop.file_executions f
   ON e.execution_id=f.execution_id AND e.tenant_id=f.tenant_id
 WHERE e.execution_id='{execution}' AND e.tenant_id={int(tenant)} AND e.module='develop' AND e.trigger_type='manual';
 """
-    raw = command(['docker', 'exec', '-i', '-e', 'MYSQL_PWD', mysql, 'mysql', '--protocol=tcp',
-                   '-h127.0.0.1', '-u' + os.environ['ADDP_DATABASE_RUNTIME_USER'], '-NB'],
-                  input=query, env={**os.environ, 'MYSQL_PWD': os.environ['ADDP_DATABASE_RUNTIME_PASSWORD']})
+    raw = mysql_read(mysql, query)
     status, attempt, no_lease, unstarted, admission, approvals, runtime_id, authorization_id, runtime_status = raw.split('\t')
     return dict(status=status, attempt=int(attempt), lease_absent=no_lease == '1', unstarted=unstarted == '1',
                 admission_state=admission, admission_approval_ids=json.loads(approvals),
@@ -156,9 +116,9 @@ def run(nfs, secret, run_id, artifacts):
     project = os.environ['ADDP_DEPLOYMENT_PROJECT']
     infra = os.environ['ADDP_MYSQL_FIXTURE_PROJECT']
     network = os.environ['ADDP_DEPLOYMENT_NETWORK']
-    develop = owned_container('ADDP_TEST_DEVELOP_CONTAINER', project, 'develop-backend', network)
-    mysql = owned_container('ADDP_TEST_MYSQL_CONTAINER', infra, 'mysql', network)['Id']
-    runtime = owned_container('ADDP_TEST_GEOPYTHON_CONTAINER', infra, 'geopython-workflow-engine', network)
+    develop = owned_container(os.environ['ADDP_TEST_DEVELOP_CONTAINER'], project, 'develop-backend', network)
+    mysql = owned_container(os.environ['ADDP_TEST_MYSQL_CONTAINER'], infra, 'mysql', network)['Id']
+    runtime = owned_container(os.environ['ADDP_TEST_GEOPYTHON_CONTAINER'], infra, 'geopython-workflow-engine', network)
     require(runtime['Config']['Cmd'] == ['sh', 'container_entrypoint.sh']
             and runtime['Config']['Image'] == 'localhost:5001/addp-geopython-workflow-engine:hosted-' + os.environ['GITHUB_SHA']
             and not any(runtime['HostConfig']['PortBindings'] or {}) and not runtime['Mounts'],

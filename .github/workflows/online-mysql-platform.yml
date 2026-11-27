@@ -7,7 +7,7 @@ on:
         description: Isolated release scenario
         type: choice
         default: gateway
-        options: [gateway, service-lineage, manager, develop-file]
+        options: [gateway, service-lineage, manager, develop-file, quality-worker]
 
 permissions:
   contents: read

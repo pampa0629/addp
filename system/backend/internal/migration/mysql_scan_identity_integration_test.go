@@ -178,7 +178,30 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 	}
 	if fileFacts := os.Getenv("ADDP_TEST_MYSQL_DEVELOP_FILE_FACTS"); fileFacts != "" {
 		t.Run("DevelopFilePublicationTenant", func(t *testing.T) {
-			prepareMySQLDevelopFileTenant(t, repo, creator, fileFacts)
+			prepareMySQLHostedTenant(t, repo, creator, fileFacts, "develop-file", []mysqlHostedUser{
+				{"develop-file-actor", "ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD", "", []string{
+					"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
+					"system.execution_authorization.create", "meta.catalog.read", "manager.data_item.read",
+				}},
+				{"develop-file-approver", "ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD", "tenant.engine_access_delegation_administrator", []string{
+					"meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create",
+				}},
+				{"develop-file-registrar", "ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD", "tenant.infrastructure_administrator", nil},
+			})
+		})
+	}
+	if qualityFacts := os.Getenv("ADDP_TEST_MYSQL_QUALITY_FACTS"); qualityFacts != "" {
+		t.Run("QualityWorkerTenant", func(t *testing.T) {
+			prepareMySQLHostedTenant(t, repo, creator, qualityFacts, "quality-worker", []mysqlHostedUser{
+				{"quality-worker-actor", "ADDP_TEST_MYSQL_QUALITY_ACTOR_PASSWORD", "", []string{
+					"quality.plan.execute", "quality.plan.read", "monitor.execution.read",
+					"system.execution_authorization.create", "develop.data_read.execute",
+				}},
+				{"quality-worker-author", "ADDP_TEST_MYSQL_QUALITY_AUTHOR_PASSWORD", "", []string{
+					"quality.rule.create", "quality.rule.read", "quality.plan.create",
+				}},
+				{"quality-worker-registrar", "ADDP_TEST_MYSQL_QUALITY_REGISTRAR_PASSWORD", "tenant.infrastructure_administrator", nil},
+			})
 		})
 	}
 	t.Run("ExecutionAuthorization", func(t *testing.T) {
@@ -193,37 +216,29 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 	}
 }
 
-func prepareMySQLDevelopFileTenant(t *testing.T, repo *iam.Repository, creator int64, path string) {
+type mysqlHostedUser struct {
+	name, passwordEnv, builtinRole string
+	permissions                    []string
+}
+
+func prepareMySQLHostedTenant(t *testing.T, repo *iam.Repository, creator int64, path, scenario string, users []mysqlHostedUser) {
 	t.Helper()
 	ctx := t.Context()
 	identities := iam.NewIdentityService(repo, nil)
 	admin, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{
-		Username: "develop-file-admin", DisplayName: "Develop file fixture administrator", Password: rand.Text(),
+		Username: scenario + "-admin", DisplayName: scenario + " fixture administrator", Password: rand.Text(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	tenant, err := iam.NewPlatformTenantService(repo, nil).Create(ctx, iam.CreateTenantInput{
-		Code: "mysql-develop-file", Name: "MySQL Develop file fixture", ActorPrincipalID: creator, InitialAdministratorPrincipalID: admin.PrincipalID,
+		Code: "mysql-" + scenario, Name: "MySQL " + scenario + " fixture", ActorPrincipalID: creator, InitialAdministratorPrincipalID: admin.PrincipalID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tenant.ID <= 1 {
-		t.Fatal("Develop file publication requires a nondefault fixture tenant")
-	}
-	users := []struct {
-		name, passwordEnv, builtinRole string
-		permissions                    []string
-	}{
-		{"develop-file-actor", "ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD", "", []string{
-			"develop.task.read", "develop.task.execute", "develop.data_read.execute", "develop.data_write.execute",
-			"system.execution_authorization.create", "meta.catalog.read", "manager.data_item.read",
-		}},
-		{"develop-file-approver", "ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD", "tenant.engine_access_delegation_administrator", []string{
-			"meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create",
-		}},
-		{"develop-file-registrar", "ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD", "tenant.infrastructure_administrator", nil},
+		t.Fatal("Hosted acceptance requires a nondefault fixture tenant")
 	}
 	facts := map[string]int64{"tenant_id": tenant.ID}
 	members := iam.NewTenantMembershipService(repo, nil)
@@ -262,7 +277,7 @@ func prepareMySQLDevelopFileTenant(t *testing.T, repo *iam.Repository, creator i
 		}
 		if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
 			TenantID: tenant.ID, MembershipID: membership.Membership.ID, RoleIDs: roleIDs, ActorPrincipalID: admin.PrincipalID,
-			Reason: "Disposable MySQL Develop file publication acceptance",
+			Reason: "Disposable MySQL " + scenario + " acceptance",
 		}); err != nil {
 			t.Fatal(err)
 		}

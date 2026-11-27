@@ -16,6 +16,7 @@ case "${ADDP_MYSQL_ONLINE_SUITE:-gateway}" in
   service-lineage) ADDP_DEPLOYMENT_MODULES=service; schemas+=(service) ;;
   manager) ADDP_DEPLOYMENT_MODULES=manager,security; schemas+=(manager security) ;;
   develop-file) ADDP_DEPLOYMENT_MODULES=develop,security; schemas+=(develop security) ;;
+  quality-worker) ADDP_DEPLOYMENT_MODULES=quality,monitor; schemas+=(quality monitor); export TZ=UTC ;;
   *) echo "unknown Hosted MySQL suite" >&2; exit 2 ;;
 esac
 export ADDP_DEPLOYMENT_PROJECT="addp-mysql-platform-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -126,6 +127,8 @@ keys = (
     "ADDP_PUBLIC_ORIGIN", "ALLOWED_ORIGINS", "CONSOLE_URL", "PUBLIC_API_URL",
     "ADDP_OBSERVABILITY_LOGS_ENABLED",
 )
+if os.environ["ADDP_DEPLOYMENT_MODULES"] == "quality,monitor":
+    keys += ("TZ",)
 env_file = Path(".env")
 lines = [line for line in env_file.read_text().splitlines() if line.partition("=")[0] not in keys]
 lines.extend(f"{key}={shlex.quote(os.environ[key])}" for key in keys)
@@ -137,17 +140,25 @@ for key in REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD IAM_MFA_ENCRYPTION
   export "$key=$value"
 done
 unset value
-export MYSQL_FIXTURE_IMAGE MEILISEARCH_FIXTURE_IMAGE SEARCH_SOURCE_IMAGE SEARCH_SOURCE_ADMIN_PASSWORD
+export MYSQL_FIXTURE_IMAGE MEILISEARCH_FIXTURE_IMAGE POSTGRES_FIXTURE_IMAGE SEARCH_SOURCE_ADMIN_PASSWORD
 MYSQL_FIXTURE_IMAGE=$(docker compose -f scripts/test/docker-compose.local-macos-ci.yml config --images mysql)
+if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security || "$ADDP_DEPLOYMENT_MODULES" == quality,monitor ]]; then
+  POSTGRES_FIXTURE_IMAGE=$(ADDP_INFRA_GATE_PASSWORD=fixture ADDP_INFRA_GATE_MANAGER_PASSWORD=fixture \
+    docker compose --env-file /dev/null -f scripts/test/docker-compose.system-infra-configuration-t2.yml config --images postgres)
+fi
 if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
   MEILISEARCH_FIXTURE_IMAGE=$(docker compose --env-file .env -f docker-compose.infra.yml config --images meilisearch)
-  SEARCH_SOURCE_IMAGE=$(ADDP_INFRA_GATE_PASSWORD=fixture ADDP_INFRA_GATE_MANAGER_PASSWORD=fixture \
-    docker compose --env-file /dev/null -f scripts/test/docker-compose.system-infra-configuration-t2.yml config --images postgres)
   SEARCH_SOURCE_ADMIN_PASSWORD=$(openssl rand -hex 24)
   export ADDP_TEST_MYSQL_SEARCH_OPERATOR_PASSWORD SEARCH_SOURCE_READER_PASSWORD
   ADDP_TEST_MYSQL_SEARCH_OPERATOR_PASSWORD=$(openssl rand -hex 24)
   SEARCH_SOURCE_READER_PASSWORD=$(openssl rand -hex 24)
   fixture_compose+=(--profile manager)
+fi
+if [[ "$ADDP_DEPLOYMENT_MODULES" == quality,monitor ]]; then
+  export QUALITY_SOURCE_ADMIN_PASSWORD ADDP_TEST_QUALITY_SOURCE_PASSWORD
+  QUALITY_SOURCE_ADMIN_PASSWORD=$(openssl rand -hex 24)
+  ADDP_TEST_QUALITY_SOURCE_PASSWORD=$(openssl rand -hex 24)
+  fixture_compose+=(--profile quality-worker)
 fi
 cat > "$work/compose.yml" <<'YAML'
 name: ${ADDP_MYSQL_FIXTURE_PROJECT:?}
@@ -205,12 +216,24 @@ services:
       service: manager-search-redis
   search-source:
     profiles: [manager]
-    image: ${SEARCH_SOURCE_IMAGE:-postgres:15}
+    image: ${POSTGRES_FIXTURE_IMAGE:-postgres:15}
     environment:
       POSTGRES_DB: search_fixture
       POSTGRES_PASSWORD: ${SEARCH_SOURCE_ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "search_fixture"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
+  quality-source:
+    profiles: [quality-worker]
+    image: ${POSTGRES_FIXTURE_IMAGE:-postgres:15}
+    environment:
+      POSTGRES_DB: quality_fixture
+      POSTGRES_PASSWORD: ${QUALITY_SOURCE_ADMIN_PASSWORD:-}
+    volumes: [quality-source-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "quality_fixture"]
       interval: 3s
       timeout: 4s
       retries: 30
@@ -232,6 +255,7 @@ services:
     ports: ["127.0.0.1:5001:5000"]
 volumes:
   database:
+  quality-source-data:
 networks:
   default:
     name: ${ADDP_DEPLOYMENT_NETWORK:?}
@@ -306,6 +330,8 @@ selected_module = os.environ["ADDP_DEPLOYMENT_MODULES"]
 if selected_module:
     assert manifest["selection"]["ADDP_DEPLOYMENT_MODULES"] == selected_module
     backends.extend(f"{module}-backend" for module in selected_module.split(","))
+if selected_module == 'quality,monitor':
+    backends.append("quality-worker")
 for name in backends:
     container = services[name]
     settings = dict(value.split("=", 1) for value in container["Config"]["Env"])
@@ -319,6 +345,8 @@ for name in backends:
     assert container["State"]["Running"] and container["State"].get("Health", {}).get("Status", "none") != "unhealthy", name
     if name == "manager-backend":
         assert container["State"]["Health"]["Status"] == "healthy"
+    if selected_module == "quality,monitor" and name in {"quality-backend", "quality-worker", "monitor-backend"}:
+        assert settings["TZ"] == "UTC", name
 Path(sys.argv[1], "runtime.json").write_text(json.dumps({"provider": "mysql", "verified_services": sorted(services)}))
 PY
 printf 'server_version=%s\n' "$(admin <<<'SELECT VERSION()')" | tee "$artifacts/mysql-versions.txt"
@@ -351,6 +379,13 @@ if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
   ADDP_TEST_MYSQL_DEVELOP_ACTOR_PASSWORD=$(openssl rand -hex 24)
   ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD=$(openssl rand -hex 24)
   ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD=$(openssl rand -hex 24)
+fi
+if [[ "$ADDP_DEPLOYMENT_MODULES" == quality,monitor ]]; then
+  export ADDP_TEST_MYSQL_QUALITY_FACTS="$work/quality-tenant.json"
+  export ADDP_TEST_MYSQL_QUALITY_ACTOR_PASSWORD ADDP_TEST_MYSQL_QUALITY_AUTHOR_PASSWORD ADDP_TEST_MYSQL_QUALITY_REGISTRAR_PASSWORD
+  ADDP_TEST_MYSQL_QUALITY_ACTOR_PASSWORD=$(openssl rand -hex 24)
+  ADDP_TEST_MYSQL_QUALITY_AUTHOR_PASSWORD=$(openssl rand -hex 24)
+  ADDP_TEST_MYSQL_QUALITY_REGISTRAR_PASSWORD=$(openssl rand -hex 24)
 fi
 make build-iam-bootstrap
 ln -s "$PWD/dist/release-linux-amd64/addp-iam-bootstrap" "$work/iam-bootstrap"
@@ -483,5 +518,18 @@ if [[ "$ADDP_DEPLOYMENT_MODULES" == develop,security ]]; then
   export ADDP_TEST_GEOPYTHON_CONTAINER="$(fixture ps -q geopython-workflow-engine)"
   export ADDP_TEST_DEVELOP_CONTAINER="$("${app[@]}" ps -q develop-backend)"
   develop_file_fixture run "$artifacts"
+fi
+if [[ "$ADDP_DEPLOYMENT_MODULES" == quality,monitor ]]; then
+  stage=quality-source
+  fixture exec -T quality-source psql -X -v ON_ERROR_STOP=1 -U postgres -d quality_fixture <<SQL
+CREATE TABLE public.quality_probe (id bigint PRIMARY KEY);
+INSERT INTO public.quality_probe VALUES (1), (2), (3);
+CREATE ROLE quality_source_reader LOGIN PASSWORD '$ADDP_TEST_QUALITY_SOURCE_PASSWORD';
+GRANT USAGE ON SCHEMA public TO quality_source_reader;
+GRANT SELECT ON public.quality_probe TO quality_source_reader;
+SQL
+  stage=quality-worker
+  python3 -m scripts.test.mysql-quality-worker-online "$artifacts" "$(fixture ps -q mysql)" \
+    "$(fixture ps -q quality-source)" "$("${app[@]}" ps -q quality-worker)"
 fi
 stage=complete

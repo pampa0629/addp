@@ -106,9 +106,13 @@ def assert_quality(child, fixture, parent_id, passed, revision, plan_version, ru
 
 
 def assert_quality_events(client, execution_id, passed):
-    """The fixture has one enabled rule; only its progress percentage is public."""
     path = f"/api/v1/monitor/executions/by-execution-id/{execution_id}/events?limit=100"
     page = client.request("GET", path, (200,)).payload
+    return len(validate_quality_event_page(page, execution_id, passed))
+
+
+def validate_quality_event_page(page, execution_id, passed):
+    """The fixture has one enabled rule; only its progress percentage is public."""
     require(isinstance(page, dict) and set(page) == {"items", "next_cursor", "has_more", "retained_after"},
             "invalid quality event page contract")
     events = page["items"]
@@ -134,7 +138,7 @@ def assert_quality_events(client, execution_id, passed):
         previous_id = identifier
     require(type(page["next_cursor"]) is int and page["next_cursor"] == previous_id,
             "quality event cursor mismatch")
-    return len(events)
+    return events
 
 
 def run_suite(client, tenant_id, run_id, fixtures, report, checkpoint=lambda: None):
