@@ -2774,10 +2774,22 @@ assert.throws(() => verify([...observations, ...observations.slice(0, 4)]), {cod
         self.assertEqual(run.returncode, 0, run.stderr)
 
     def setUp(self):
+        import hashlib
+        import struct
+        import zlib
         self.owner=DissolveOnlineTest();self.owner.setUp();self.addCleanup(self.owner.doCleanups);self.report=self.owner.run_case();self.evidence=self.report['browser'];e=self.evidence
-        self.raw={'schema_version':'addp.polygon-dissolve-browser-raw/v1','case':e['case'],'run_id':e['run_id'],'stage':'complete','result':'passed','publication_requests':[],
+        self.frames = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.raw={'schema_version':'addp.polygon-dissolve-browser-raw/v2','case':e['case'],'run_id':e['run_id'],'stage':'complete','result':'passed','publication_requests':[],
             'successes':[{'variant':r['variant'],'execution_id':r['execution_id'],'execution':r['execution']}for r in e['successes']],'observations':[],'failures':[]}
-        for output in e['outputs']:
+        def chunk(kind, payload):
+            return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', zlib.crc32(kind + payload))
+        for width, output in enumerate(e['outputs'], 31):
+            file = f"dissolve-{output['name']}-render.png"
+            pixels = b'\0' + bytes((0, 160, 0, 255)) * 31 + b'\0' * ((width - 31) * 4)
+            png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, 1, 8, 6, 0, 0, 0))
+                   + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b''))
+            (self.frames / file).write_bytes(png)
+            frame = {'file': file, 'width': width, 'height': 1, 'sha256': hashlib.sha256(png).hexdigest()}
             expected=output['features'];encoded=overlay_wire_and_projected(expected);fields=list(expected[0]['properties']);count=len(expected)
             popup_index = next((i for i, row in enumerate(expected) if None in row['properties'].values()), 0)
             popup_properties = expected[popup_index]['properties']
@@ -2788,17 +2800,23 @@ assert.throws(() => verify([...observations, ...observations.slice(0, 4)]), {cod
                 'lineage_canvas':{'rows':[{'text':n}for n in(e['sources'][0]['name'],output['name'])],'paths':[[[0,0],[1,1]]]},
                 'preview':{'preview_type':'table','data':{'page':1,'total':count,'source_srid':3857,'source_crs':'EPSG:3857','transform_status':'not_transformed','preview_hint':'frontend_transform_required',
                     'geometry_columns':['parcel_shape'],'columns':['fid','parcel_shape',*fields],'rows':[{**row['properties'],'fid':i+1,'parcel_shape':wire}for i,(row,wire)in enumerate(zip(expected,encoded['wire']))]}},
-                'popup':{'properties':popup_properties,'rows':popup_rows},'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31}})
+                'popup':{'properties':popup_properties,'rows':popup_rows},'decoded_rows':expected,'rendered':{'projection':'EPSG:3857','features':encoded['projected'],'painted_pixels':31,'frame':frame}})
         for failed in e['failures']:
             self.raw['failures'].append({'key':failed['key'],'execution_id':failed['execution_id'],'observations':[{'key':failed['key'],'execution_id':failed['execution_id'],'owner':o,'locale':l,'raw':failed['execution']if o=='develop'else{'execution':failed['monitor']}}for o in('develop','monitor')for l in('zh-cn','en')]})
         self.raw['failures']=frozen_literal_clipboards(self.raw['failures'])
     def test_dissolve_browser_accepts_four_maps_two_execution_pages_and_28_exact_diagnostic_reads(self):
-        m.validate_dissolve_browser_raw(self.raw,self.evidence)
+        m.validate_dissolve_browser_raw(self.raw,self.evidence,self.frames)
     def test_dissolve_browser_refuses_wrong_ewkb_member_properties_pixels_graph_uuid_and_clipboard(self):
-        changes=[lambda r:r.update(result='incomplete'),lambda r:r['successes'][1]['execution'].update(status='failed'),lambda r:r['observations'].pop(),
+        changes=[lambda r:r.update(result='incomplete'),lambda r:r.update(schema_version='addp.polygon-dissolve-browser-raw/v1'),lambda r:r['successes'][1]['execution'].update(status='failed'),lambda r:r['observations'].pop(),
             lambda r:r['observations'][0]['preview']['data']['rows'][0].update(member_count=True),lambda r:r['observations'][1]['preview']['data']['rows'][0].update(enabled=1),
             lambda r:r['observations'][1]['preview']['data']['rows'][0].update(parcel_shape=r['observations'][1]['preview']['data']['rows'][1]['parcel_shape']),
             lambda r:r['observations'][0]['rendered']['features'].pop(),lambda r:r['observations'][0]['rendered'].update(painted_pixels=0),
+            lambda r:r['observations'][0]['rendered'].update(painted_pixels=32),
+            lambda r:r['observations'][0]['rendered'].pop('frame'),
+            lambda r:r['observations'][0]['rendered']['frame'].update(file='other.png'),
+            lambda r:r['observations'][0]['rendered']['frame'].update(height=True),
+            lambda r:r['observations'][0]['rendered']['frame'].update(width=32),
+            lambda r:r['observations'][0]['rendered']['frame'].update(sha256='a'*64),
             lambda r:r['observations'][1]['popup']['rows'].pop(),
             lambda r:next(row for row in r['observations'][1]['popup']['rows'] if row['value']=='').update(value='NULL'),
             lambda r:next(row for row in r['observations'][0]['popup']['rows'] if row['key']=='fid').update(value='999'),
@@ -2807,7 +2825,17 @@ assert.throws(() => verify([...observations, ...observations.slice(0, 4)]), {cod
             lambda r:r['observations'][1]['decoded_rows'][0]['properties'].update(source_id=1)]
         for change in changes:
             raw=copy.deepcopy(self.raw);change(raw)
-            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_dissolve_browser_raw(raw,self.evidence)
+            with self.subTest(change=change),self.assertRaises(m.SuiteError):m.validate_dissolve_browser_raw(raw,self.evidence,self.frames)
+
+    def test_dissolve_browser_refuses_missing_or_replaced_frame_bytes(self):
+        frame = self.frames / self.raw['observations'][0]['rendered']['frame']['file']
+        png = frame.read_bytes()
+        frame.unlink()
+        with self.assertRaisesRegex(m.SuiteError, 'missing or unreadable'):
+            m.validate_dissolve_browser_raw(self.raw, self.evidence, self.frames)
+        frame.write_bytes(png + b'extra')
+        with self.assertRaisesRegex(m.SuiteError, 'does not match'):
+            m.validate_dissolve_browser_raw(self.raw, self.evidence, self.frames)
 
 
 class DissolveBrowserContractTest(unittest.TestCase):
@@ -2839,9 +2867,12 @@ const root=process.argv[1],source=readFileSync(root+'/console/frontend/e2e/onlin
 const start=source.indexOf('async function assertDissolveMap('),end=source.indexOf('function assertDissolveLineage(',start);
 const{webMercatorPreviewGeometry}=await import(pathToFileURL(root+'/manager/frontend/e2e/geometry-preview-coordinate.js'));
 const expect=value=>({toHaveLength:n=>assert.equal(value.length,n)});expect.poll=fn=>({toEqual:async value=>assert.deepEqual(await fn(),value),toBeGreaterThan:async n=>assert.ok(await fn()>n)});
-const check=new Function('expect','webMercatorPreviewGeometry',source.slice(start,end)+';return assertDissolveMap')(expect,webMercatorPreviewGeometry);
+const noop=()=>{}; const readHash=()=>({update:()=>({digest:()=> 'sha'})});
+const check=new Function('expect','webMercatorPreviewGeometry','captureDissolveFrame','writeFileSync','resolve','createHash',source.slice(start,end)+';return assertDissolveMap')(expect,webMercatorPreviewGeometry,noop,noop,()=>'',readHash);
 let text='';for await(const p of process.stdin)text+=p;const expected=JSON.parse(text),native={projection:'EPSG:3857',features:expected.map(r=>({properties:r.properties,geometry:webMercatorPreviewGeometry(r.geometry)}))};
-const renderer=(v,pixels=31)=>({evaluate:async()=>v,locator:()=>({evaluateAll:async()=>pixels})});await check(renderer(native),expected);
+const renderer=(v,pixels=31)=>({evaluate:async(fn)=>fn===noop?{width:31,height:1,painted_pixels:pixels,png:''}:v});
+const observed=await check(renderer(native),expected,'','test.gpkg');
+assert.deepEqual(observed.frame,{file:'dissolve-test.gpkg-render.png',width:31,height:1,sha256:'sha'});
 for(const change of[v=>v.features.pop(),v=>v.features.push(structuredClone(v.features[0])),v=>v.features[0].properties.source_id++,v=>v.features[0].properties.enabled=1,v=>v.features[0].properties.geometry='changed',v=>v.features[0].geometry.coordinates[0][0]+=1,v=>v.projection='EPSG:4326']){const v=structuredClone(native);change(v);await assert.rejects(check(renderer(v),expected));}
 await assert.rejects(check(renderer(native,0),expected));"""
         result=subprocess.run(['node','--input-type=module','-e',script,str(repo)],input=json.dumps(m.fixture.dissolve_features('grouped-members')),capture_output=True,text=True,timeout=30)

@@ -3,6 +3,7 @@ import { sampleComponentsPolygonPixels } from './polygon-components-map.mjs'
 import { expect, request, test } from '@playwright/test'
 import { observeLineageCanvas, lineageCanvasSnapshot } from '../../../../common-frontend/basic/tests/fixtures/lineageCanvas.js'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 import { decodePreviewEWKB } from '../../../../manager/frontend/e2e/geometry-preview-support.js'
 import { webMercatorPreviewCoordinate, webMercatorPreviewGeometry } from '../../../../manager/frontend/e2e/geometry-preview-coordinate.js'
@@ -2019,7 +2020,44 @@ async function verifyMixedOverlayCase(page,caseName) {
 
 test('相交叠加独立普通User完整混合交集及四失败保护', async ({ page }) => verifyOverlayCase(page))
 
-async function assertDissolveMap(renderer, expected) {
+async function captureDissolveFrame(element, featureCount) {
+  const value = element.__vueParentComponent?.setupState?.mapInstance
+  const map = value?.value || value
+  if (!map || map.getView().getAnimating()) return null
+  const layers = map.getLayers().getArray()
+  const layer = layers.find(candidate => candidate.getSource?.()?.getFeatures?.().length === featureCount)
+  if (!layer?.getVisible() || layer.getOpacity() <= 0) return null
+  // OpenLayers may share a canvas between layers. Render only the result layer before encoding it.
+  const otherLayers = layers.filter(candidate => candidate !== layer && candidate.getVisible())
+  let imageURL
+  try {
+    for (const other of otherLayers) other.setVisible(false)
+    map.renderSync()
+    const source = layer.getRenderer()?.context?.canvas
+    if (!source?.width || !source.height) return null
+    imageURL = source.toDataURL('image/png')
+  } finally {
+    for (const other of otherLayers) other.setVisible(true)
+    map.renderSync()
+  }
+  // Decode the bytes that will be archived, even if a different frame has since been rendered.
+  const image = await createImageBitmap(await (await fetch(imageURL)).blob())
+  const canvas = document.createElement('canvas')
+  const { width, height } = image
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(image, 0, 0)
+  image.close()
+  const data = ctx.getImageData(0, 0, width, height).data
+  let painted_pixels = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] > 0 && data[i + 1] > data[i] * 1.1 && data[i + 1] > data[i + 2] * 1.1) painted_pixels++
+  }
+  return { width, height, painted_pixels, png: imageURL.slice('data:image/png;base64,'.length) }
+}
+
+async function assertDissolveMap(renderer, expected, directory, outputName) {
   const fields = Object.keys(expected[0].properties)
   const keys = rows => rows.map(row => JSON.stringify(row)).sort()
   let observed
@@ -2037,16 +2075,17 @@ async function assertDissolveMap(renderer, expected) {
     return keys(observed.features)
   }).toEqual(keys(expected.map(row => ({ properties: row.properties, geometry: webMercatorPreviewGeometry(row.geometry) }))))
   expect(observed.features).toHaveLength(expected.length)
-  let pixels
+  let frame
   await expect.poll(async () => {
-    pixels=await renderer.locator('canvas').evaluateAll(canvases=>canvases.reduce((count,canvas)=>{
-      const data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data
-      for(let i=0;i<data.length;i+=4)if(data[i+3]>0&&data[i+1]>data[i]*1.1&&data[i+1]>data[i+2]*1.1)count++
-      return count
-    },0))
-    return pixels
+    frame = await renderer.evaluate(captureDissolveFrame, expected.length)
+    return frame?.painted_pixels ?? 0
   }).toBeGreaterThan(30)
-  observed.painted_pixels=pixels
+  const { png, width, height, painted_pixels } = frame
+  const bytes = Buffer.from(png, 'base64')
+  const file = `dissolve-${outputName}-render.png`
+  writeFileSync(resolve(directory, file), bytes)
+  observed.painted_pixels = painted_pixels
+  observed.frame = { file, width, height, sha256: createHash('sha256').update(bytes).digest('hex') }
   return observed
 }
 
@@ -2063,7 +2102,7 @@ async function verifyDissolveCase(page) {
   expect(evidence.case).toBe('polygon-dissolve');expect(evidence.sources).toHaveLength(5);expect(evidence.successes.map(s=>s.variant)).toEqual(['grouped','global']);expect(evidence.outputs).toHaveLength(4)
   await observeLineageCanvas(page)
   const identity={principalID:evidence.principal_id,tenantID:evidence.tenant_id,permissions:evidence.permissions_verified}
-  const raw={schema_version:'addp.polygon-dissolve-browser-raw/v1',case:evidence.case,run_id:evidence.run_id,successes:[],observations:[]}
+  const raw={schema_version:'addp.polygon-dissolve-browser-raw/v2',case:evidence.case,run_id:evidence.run_id,successes:[],observations:[]}
   const persist=(stage,result='incomplete')=>writeFileSync(resolve(directory,'topology-dissolve-browser-raw.json'),JSON.stringify({...raw,stage,result},null,2)+'\n')
   const writes=[];page.on('request',request=>{const path=new URL(request.url()).pathname;if(!['GET','HEAD','OPTIONS'].includes(request.method())&&/^\/api\/v1\/(develop|meta|manager)\//.test(path))writes.push({method:request.method(),path})})
   const frame=page.frameLocator('iframe[data-testid="module-iframe"]');let loggedIn=false
@@ -2098,7 +2137,7 @@ async function verifyDissolveCase(page) {
     observation.decoded_rows=data.rows.map(row=>({properties:Object.fromEntries(fields.map(key=>[key,row[key]])),geometry:decodePreviewEWKB(row[output.geometry_column])}))
     expect(observation.decoded_rows).toEqual(expected)
     const table=frame.locator('.table-preview'),renderer=table.locator('.openlayers-map-renderer');await expect(table).toBeVisible();await expect(table.locator('.map-placeholder')).toHaveCount(0)
-    observation.rendered=await assertDissolveMap(renderer,expected)
+    observation.rendered=await assertDissolveMap(renderer,expected,directory,output.name)
     persist('rendered_'+output.name)
     for(const field of fields)await expect(table.locator('thead')).toContainText(field)
     // A click probes the actual popup; its property rows must preserve the original business geometry field.

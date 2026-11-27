@@ -2206,9 +2206,28 @@ def validate_point_outputs_browser_raw(raw,evidence,vertices):
             if execution.get('error_details')!=failed['error_details'] or not isinstance(read.get('clipboard'),str) or not read['clipboard'] or any(t in read['clipboard'] for t in (*DIAGNOSTIC_PRIVATE,'route_key','source_shape','节点业务几何')):raise SuiteError('nodes browser error/copy differs or leaks')
 
 
-def validate_dissolve_browser_raw(raw,evidence):
+def validate_dissolve_frame(rendered, output_name, directory):
+    import hashlib
+    import struct
+    frame = obj(rendered.get('frame'), 'dissolve archived frame')
+    file = f'dissolve-{output_name}-render.png'
+    if frame.get('file') != file:
+        raise SuiteError('dissolve frame does not belong to the output')
+    width = positive(frame.get('width'), 'dissolve frame width')
+    height = positive(frame.get('height'), 'dissolve frame height')
+    try:
+        png = (directory / file).read_bytes()
+    except OSError as exc:
+        raise SuiteError('dissolve frame is missing or unreadable') from exc
+    header = b'\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR'
+    if (len(png) < 33 or not png.startswith(header) or struct.unpack_from('>II', png, 16) != (width, height)
+            or frame.get('sha256') != hashlib.sha256(png).hexdigest() or rendered['painted_pixels'] > width * height):
+        raise SuiteError('dissolve archived PNG does not match the measured frame')
+
+
+def validate_dissolve_browser_raw(raw,evidence,directory):
     import base64,struct
-    if(raw.get('schema_version')!=fixture.DISSOLVE_SCHEMA+'-browser-raw/v1'or raw.get('result')!='passed'or raw.get('stage')!='complete'or any(raw.get(k)!=evidence.get(k)for k in('case','run_id'))or raw.get('publication_requests')!=[]):raise SuiteError('dissolve browser raw incomplete or foreign')
+    if(raw.get('schema_version')!=fixture.DISSOLVE_SCHEMA+'-browser-raw/v2'or raw.get('result')!='passed'or raw.get('stage')!='complete'or any(raw.get(k)!=evidence.get(k)for k in('case','run_id'))or raw.get('publication_requests')!=[]):raise SuiteError('dissolve browser raw incomplete or foreign')
     principal=positive(evidence['principal_id'],'dissolve browser User')
     successes=array(raw.get('successes'),'dissolve browser successes')
     if len(successes)!=2:raise SuiteError('dissolve needs both success execution pages')
@@ -2242,6 +2261,7 @@ def validate_dissolve_browser_raw(raw,evidence):
         if not all(any(n in row.get('text','')for row in labels)for n in(evidence['sources'][0]['name'],output['name']))or len(array(canvas.get('paths'),'dissolve paths'))<1:raise SuiteError('dissolve lineage not painted')
         rendered=obj(observation.get('rendered'),'dissolve rendered map')
         if rendered.get('projection')!='EPSG:3857'or len(array(rendered.get('features'),'dissolve map features'))!=count or type(rendered.get('painted_pixels'))is not int or rendered['painted_pixels']<=30:raise SuiteError('dissolve map incomplete')
+        validate_dissolve_frame(rendered, output['name'], directory)
         script="""import assert from 'node:assert/strict';import{pathToFileURL}from'node:url';
 const{webMercatorPreviewGeometry}=await import(pathToFileURL(process.argv[1]));const{decodePreviewEWKB}=await import(pathToFileURL(process.argv[2]));let text='';for await(const p of process.stdin)text+=p;
 const v=JSON.parse(text),keys=rows=>rows.map(r=>JSON.stringify(r)).sort();assert.deepEqual(v.rows.map(r=>decodePreviewEWKB(r[v.column])),v.expected.map(r=>r.geometry));
@@ -2424,7 +2444,7 @@ def browser(repository, env, evidence):
         validate_difference_log_browser(raw, evidence['log_samples'])
         report['execution_logs'] = raw['execution_logs']
     if case==fixture.DISSOLVE_CASE:
-        validate_dissolve_browser_raw(obj(json.loads((path.parent/'topology-dissolve-browser-raw.json').read_text()),'dissolve browser raw'),evidence)
+        validate_dissolve_browser_raw(obj(json.loads((path.parent/'topology-dissolve-browser-raw.json').read_text()),'dissolve browser raw'),evidence,path.parent)
     if case==fixture.OVERLAY_CASE:
         validate_overlay_browser_raw(obj(json.loads((path.parent/'topology-overlay-browser-raw.json').read_text()),'intersection browser raw'),evidence)
     if case==fixture.VERTICES_CASE:
