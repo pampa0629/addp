@@ -191,6 +191,17 @@ grep -q '^--- PASS: TestMySQLReadOnlyInstanceConfiguration ' "$work/readonly-mys
         -run '^TestMySQLOntologyProjectionAuthorization$' -count=1 -v
 ) | tee "$work/ontology-projection-authorization.log"
 grep -q '^--- PASS: TestMySQLOntologyProjectionAuthorization ' "$work/ontology-projection-authorization.log"
+(
+    cd "$(dirname "$0")/../../system/backend"
+    unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+    ADDP_TEST_MYSQL_DEVELOP_FILE_AUTHORIZATION=1 GOWORK=off go test ./internal/iam \
+        -run '^TestDevelopFileChildAuthorizationAgainstMySQL$' -count=1 -v
+) | tee "$work/develop-file-authorization.log"
+grep -q '^--- PASS: TestDevelopFileChildAuthorizationAgainstMySQL ' "$work/develop-file-authorization.log"
+for trigger in manual scheduled; do
+    grep -q "^    --- PASS: TestDevelopFileChildAuthorizationAgainstMySQL/${trigger}_child_uses_current_actor_private_scope_and_exact_parent_claim " \
+        "$work/develop-file-authorization.log"
+done
 python3 "$(dirname "$0")/mysql-system-startup.py" "$work"
 test "$(runtime <<<"SELECT CONCAT(version, '/', applied_version) FROM iam_security_policy")" = '1/1'
 test "$(runtime <<<"SELECT COUNT(*),MIN(kind) FROM common.execution_events WHERE execution_id='00000000-0000-4000-8000-000000000031'")" = $'1\tcompleted'
