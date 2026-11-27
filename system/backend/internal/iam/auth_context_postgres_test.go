@@ -1087,25 +1087,13 @@ func insertRoleAssignment(
 	if sourceType != "bootstrap" {
 		createdByPrincipalID = &principalID
 	}
-	var assignmentID int64
-	if err := db.Raw(`
-		INSERT INTO system.role_assignments (
-			principal_id, role_id, scope_type, tenant_id,
-			valid_from, valid_until, source_type, created_by_principal_id, grant_reason
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'AuthContext integration test')
-		RETURNING id
-	`,
-		principalID,
-		roleID,
-		scopeType,
-		tenantID,
-		validFrom,
-		validUntil,
-		sourceType,
-		createdByPrincipalID,
-	).Scan(&assignmentID).Error; err != nil {
+	assignment := RoleAssignment{
+		PrincipalID: principalID, RoleID: roleID, ScopeType: scopeType, TenantID: tenantID,
+		ValidFrom: validFrom, ValidUntil: validUntil, SourceType: sourceType, Status: "active",
+		CreatedByPrincipalID: createdByPrincipalID, GrantReason: stringPointer("AuthContext integration test"),
+	}
+	if err := db.Create(&assignment).Error; err != nil {
 		t.Fatalf("insert %s role assignment at %s scope: %v", roleKey, scopeType, err)
 	}
-	return assignmentID
+	return assignment.ID
 }

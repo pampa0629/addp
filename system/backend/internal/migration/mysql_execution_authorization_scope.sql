@@ -1,12 +1,8 @@
-ALTER TABLE execution_authorizations
-    DROP CHECK ck_execution_authorization_audience,
-    DROP CHECK ck_execution_authorization_generic_scope,
-    ADD CONSTRAINT ck_execution_authorization_audience_v2 CHECK (
-        audience IN ('model','quality','develop','transfer','service','duckdb','spark','ontology')
-    ),
-    ADD CONSTRAINT ck_execution_authorization_scope_v2 CHECK (
-        source_notebook_session_authorization_id IS NULL AND develop_file_business_deadline IS NULL
-        AND develop_file_scope IS NULL AND cleanup_scope IS NULL AND source_read_scope IS NULL
+ADD CONSTRAINT ck_execution_authorization_scope_v3 CHECK (
+        source_notebook_session_authorization_id IS NULL AND cleanup_scope IS NULL AND source_read_scope IS NULL
+        AND (develop_file_scope IS NULL OR (audience='develop' AND source_type='user' AND internal_task IS NULL
+             AND source_execution_attempt IS NULL AND source_execution_lease_token IS NULL))
+        AND (develop_file_business_deadline IS NULL OR (develop_file_scope IS NOT NULL AND develop_file_business_deadline<=expires_at))
         AND ((audience <> 'ontology' AND internal_task IS NULL) OR (
             audience='ontology' AND internal_task IS NOT NULL AND source_type='user'
             AND source_execution_attempt IS NULL AND source_execution_lease_token IS NULL

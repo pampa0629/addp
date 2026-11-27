@@ -5,13 +5,17 @@ import (
 	"time"
 )
 
-func (r *Repository) internalTaskDatabaseTime(ctx context.Context) (time.Time, error) {
+func (r *Repository) executionClockSQL() string {
 	if r.db.Dialector.Name() == "mysql" {
-		return r.CurrentDatabaseTime(ctx)
+		return "CURRENT_TIMESTAMP(6)"
 	}
+	return "clock_timestamp()"
+}
+
+func (r *Repository) internalTaskDatabaseTime(ctx context.Context) (time.Time, error) {
 	var now time.Time
-	err := r.db.WithContext(ctx).Raw("SELECT clock_timestamp()").Scan(&now).Error
-	return now, wrapRepositoryError(err)
+	err := r.db.WithContext(ctx).Raw("SELECT " + r.executionClockSQL()).Scan(&now).Error
+	return now.UTC(), wrapRepositoryError(err)
 }
 
 func (r *Repository) lockInternalTaskExecution(ctx context.Context, authorization *ExecutionAuthorization, input AuthorizeInternalTaskInput) (time.Time, error) {
@@ -20,10 +24,9 @@ func (r *Repository) lockInternalTaskExecution(ctx context.Context, authorizatio
 		MembershipExpiresAt *time.Time
 	}
 	config := "jsonb_build_object('ontology_id', ?::text, 'revision', ?::text, 'digest', ?::text, 'generation', ?::text)"
-	now := "clock_timestamp()"
+	now := r.executionClockSQL()
 	if r.db.Dialector.Name() == "mysql" {
 		config = "JSON_OBJECT('ontology_id', ?, 'revision', ?, 'digest', ?, 'generation', ?)"
-		now = "CURRENT_TIMESTAMP(6)"
 	}
 	result := r.db.WithContext(ctx).Raw(`
 		SELECT e.lease_expires_at, membership.expires_at AS membership_expires_at FROM common.task_executions e

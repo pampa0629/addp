@@ -15,6 +15,8 @@ import (
 	"github.com/addp/common/client"
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/execution"
+	"github.com/addp/common/infra/bootstrap"
+	"github.com/addp/common/infra/database"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/common/schema"
 	"github.com/addp/system/internal/migration"
@@ -67,10 +69,29 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 	if err := schema.InitializeCommon(db); err != nil {
 		t.Fatal(err)
 	}
+	exerciseDevelopFileAuthorization(t, ctx, db)
+}
+func TestDevelopFileChildAuthorizationAgainstMySQL(t *testing.T) {
+	if os.Getenv("ADDP_TEST_MYSQL_DEVELOP_FILE_AUTHORIZATION") != "1" {
+		t.Skip("requires isolated System MySQL installation")
+	}
+	db, err := bootstrap.OpenPlatformRuntime(database.Config{Schema: "system"}, "system", &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	exerciseDevelopFileAuthorization(t, t.Context(), db)
+}
+func exerciseDevelopFileAuthorization(t *testing.T, ctx context.Context, db *gorm.DB) {
+	t.Helper()
 	repo := NewRepository(db)
 	audit := AuditMetadata{RequestID: stringPointer("develop-file-test")}
 	user := createContextSelectionUser(t, ctx, NewIdentityService(repo, nil), "develop-file-user", audit)
-	members := NewTenantMembershipService(repo, testFixtureDatabaseClock(t, db))
+	members := NewTenantMembershipService(repo, nil)
 	tenant := createContextSelectionTenant(t, ctx, members, "develop-file", audit)
 	member := establishContextSelectionMembership(t, ctx, members, tenant.ID, user.PrincipalID, audit)
 	now, err := repo.internalTaskDatabaseTime(ctx)
@@ -129,7 +150,17 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 	}
 	serviceType, tenantType := PrincipalTypeServicePrincipal, ContextTypeTenant
 	serviceAudit := AuditMetadata{PrincipalID: &runtimeID, PrincipalType: &serviceType, ContextType: &tenantType, TenantID: &tenant.ID, RequestID: stringPointer("develop-file-service-test")}
-	engineID := insertEngineFixture(t, db, tenant.ID, "Develop file NFS", "nfs", plugin.ConnectionInfo{"server": "fixture-nfs", "export_path": "/fixture"}, false)
+	var engineID int64
+	if db.Dialector.Name() == "mysql" {
+		if err := db.Exec("INSERT INTO system.engines(tenant_id,name,engine_type,connection_info,identity_key) VALUES (?, 'Develop file NFS','nfs',?,?)", tenant.ID, `{"server":"fixture-nfs","export_path":"/fixture"}`, `{"server":"fixture-nfs","export_path":"/fixture"}`).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Raw("SELECT id FROM system.engines WHERE name='Develop file NFS' AND tenant_id=?", tenant.ID).Row().Scan(&engineID); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		engineID = insertEngineFixture(t, db, tenant.ID, "Develop file NFS", "nfs", plugin.ConnectionInfo{"server": "fixture-nfs", "export_path": "/fixture"}, false)
+	}
 	path := plugin.FileItemPath(uint(engineID), "sources/A.gpkg")
 	owner := developFileOwnerFixture{}
 	allowed := true
@@ -148,8 +179,8 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			if !allowed || !reflect.DeepEqual(current.DevelopFileScope, scope) {
 				return nil, commonapi.ErrForbidden
 			}
-			var stamp time.Time
-			if err := tx.Raw("SELECT clock_timestamp()").Scan(&stamp).Error; err != nil {
+			stamp, err := NewRepository(tx).internalTaskDatabaseTime(ctx)
+			if err != nil {
 				return nil, err
 			}
 			out := &DevelopFileReadObservation{ObservedAt: stamp, ExpiresAt: sourceExpiresAt}
@@ -245,7 +276,7 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			}
 			issued, err := svc.Issue(ctx, input)
 			if err != nil || issued == nil {
-				t.Fatal("manual child issue", err)
+				t.Fatal("issue child file authorization", err)
 			}
 			authID, _ := strconv.ParseInt(issued.Authorization.ID, 10, 64)
 			facts.AuthorizationID, facts.ScopeDigest, facts.BoundScope = issued.Authorization.ID, issued.ScopeDigest, issued.Scope.Clone()
@@ -264,8 +295,8 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			facts.AdmissionState = "ready"
 			check.LeaseToken, check.Source = uuid.MustParse(lease.Token), &path
 			_, access, err := svc.Check(ctx, check)
-			if err != nil || access == nil {
-				t.Fatal("child private read", err)
+			if err != nil || access == nil || !reflect.DeepEqual(access.Source, path) || access.Engine == nil || access.Engine.ID != uint(engineID) || access.ExpiresAt.After(parentExpiry) {
+				t.Fatal("child private read scope or expiry", err)
 			}
 			wrong := check
 			wrong.LeaseToken = uuid.New()
@@ -277,6 +308,10 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			wrong.Source = &other
 			if _, got, err := svc.Check(ctx, wrong); err == nil || got != nil {
 				t.Fatal("unbound source accepted")
+			}
+			generic, _ := NewExecutionAuthorizationService(repo)
+			if value, err := generic.AuthorizeEngineAccess(ctx, AuthorizeExecutionEngineAccessInput{AuthorizationID: authID, ExecutionID: id, EngineID: engineID, RequiredEffects: []string{"read"}, ServicePrincipalID: runtimeID, ServiceClientID: "addp-develop", TenantID: tenant.ID, Audit: serviceAudit}); err == nil || value != nil {
+				t.Fatal("file authorization accepted for generic engine access")
 			}
 			for _, change := range []struct {
 				column  string
@@ -306,6 +341,9 @@ func TestDevelopFileAuthorizationAgainstPostgres(t *testing.T) {
 			}
 		})
 	}
+	if db.Dialector.Name() == "mysql" {
+		return
+	} // This MySQL gate exercises the read-only child contract.
 	t.Run("direct scheduled root is not a trusted parent child", func(t *testing.T) {
 		facts, id := newPending(t, false)
 		if err := db.Table("common.task_executions").Where("execution_id=?", id.String()).UpdateColumn("trigger_type", "scheduled").Error; err != nil {

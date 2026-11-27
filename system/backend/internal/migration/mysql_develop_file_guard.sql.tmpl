@@ -1,0 +1,43 @@
+CREATE TRIGGER IF NOT EXISTS {{if .Insert}}develop_file_pending_execution{{else}}develop_file_immutable_boundary{{end}}
+BEFORE {{if .Insert}}INSERT{{else}}UPDATE{{end}} ON execution_authorizations FOR EACH ROW
+file_guard: BEGIN
+    {{if not .Insert}}IF NOT (NEW.develop_file_scope <=> OLD.develop_file_scope) OR
+       (OLD.develop_file_business_deadline IS NOT NULL AND NOT (NEW.develop_file_business_deadline <=> OLD.develop_file_business_deadline)) THEN
+        SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=30001, MESSAGE_TEXT='Develop file scope and fixed deadline are immutable';
+    END IF;
+    {{end}}IF NEW.develop_file_scope IS NULL THEN LEAVE file_guard; END IF;
+    {{if .Insert}}IF NEW.develop_file_business_deadline IS NOT NULL THEN
+        SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=30001, MESSAGE_TEXT='pending file task cannot have a business deadline';
+    END IF;
+    {{else}}IF OLD.sealed_at IS NULL AND NEW.sealed_at IS NOT NULL AND (
+        EXISTS (SELECT 1 FROM execution_authorization_engine_accesses a WHERE a.authorization_id=NEW.id
+          AND (a.effects<>JSON_ARRAY('read') OR NOT EXISTS (SELECT 1 FROM JSON_TABLE(NEW.develop_file_scope,'$.sources[*]'
+            COLUMNS(engine BIGINT PATH '$.target.engine_id')) s WHERE s.engine=a.engine_id)) FOR SHARE)
+        OR EXISTS (SELECT 1 FROM JSON_TABLE(NEW.develop_file_scope,'$.sources[*]' COLUMNS(engine BIGINT PATH '$.target.engine_id')) s
+          WHERE NOT EXISTS (SELECT 1 FROM execution_authorization_engine_accesses a WHERE a.authorization_id=NEW.id
+             AND a.engine_id=s.engine AND a.effects=JSON_ARRAY('read') FOR SHARE))
+    ) THEN SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=30001, MESSAGE_TEXT='Develop file scope requires the exact source engines and read effect'; END IF;
+    IF OLD.develop_file_business_deadline IS NOT NULL OR NEW.develop_file_business_deadline IS NULL THEN LEAVE file_guard; END IF;
+    IF NEW.revoked_at IS NOT NULL OR NEW.sealed_at IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=30001, MESSAGE_TEXT='Develop business deadline requires active sealed scope';
+    END IF;
+    {{end}}IF NOT EXISTS (SELECT 1 FROM common.task_executions e WHERE e.execution_id=NEW.execution_id AND e.tenant_id=NEW.tenant_id
+       AND e.module='develop' AND e.task_type='workflow' AND e.execution_boundary='bounded' AND e.max_attempts=1 AND e.retry_of_execution_id IS NULL
+       AND e.trigger_type IN ('manual','scheduled') AND e.triggered_by=NEW.actor_principal_id AND e.actor_principal_id=NEW.actor_principal_id
+       AND e.actor_tenant_membership_id=NEW.tenant_membership_id AND e.issued_authorization_version=NEW.issued_authorization_version
+       AND ((e.source='develop' AND e.parent_execution_id IS NULL AND e.trigger_type='manual') OR
+          (e.source='orchestrator' AND EXISTS (SELECT 1 FROM common.task_executions p WHERE p.execution_id=e.parent_execution_id
+           AND p.tenant_id=e.tenant_id AND p.module='orchestrator' AND p.task_type='orchestration' AND p.status='running'
+           AND p.trigger_type=e.trigger_type AND p.attempt>0 AND p.lease_token IS NOT NULL AND p.lease_owner IS NOT NULL AND p.lease_owner<>''
+           AND p.lease_expires_at>CURRENT_TIMESTAMP(6) AND p.actor_principal_id=e.actor_principal_id AND p.triggered_by=p.actor_principal_id
+           AND p.actor_tenant_membership_id=e.actor_tenant_membership_id AND p.issued_authorization_version=e.issued_authorization_version FOR SHARE)))
+       {{if .Insert}}AND e.status='pending' AND e.attempt=0 AND e.started_at IS NULL AND e.execution_authorization_id IS NULL
+       AND e.authorization_expires_at IS NULL AND e.lease_owner IS NULL AND e.lease_token IS NULL AND e.lease_expires_at IS NULL
+       {{else}}AND e.status='running' AND e.attempt=1 AND e.started_at<=CURRENT_TIMESTAMP(6) AND e.lease_owner IS NOT NULL AND e.lease_owner<>''
+       AND e.lease_token IS NOT NULL AND e.lease_expires_at>CURRENT_TIMESTAMP(6) AND e.execution_authorization_id=NEW.id AND e.authorization_expires_at=NEW.expires_at
+       AND NEW.develop_file_business_deadline>CURRENT_TIMESTAMP(6)
+       AND TIMESTAMPDIFF(MICROSECOND,e.started_at,NEW.develop_file_business_deadline)<=CAST(JSON_UNQUOTE(JSON_EXTRACT(NEW.develop_file_scope,'$.timeout_seconds')) AS SIGNED)*1000000
+       {{end}}FOR SHARE) THEN
+        SIGNAL SQLSTATE '45000' SET MYSQL_ERRNO=30001, MESSAGE_TEXT='Develop file scope requires the exact current execution';
+    END IF;
+END

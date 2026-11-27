@@ -120,10 +120,13 @@ func MigrateMySQLEngineCatalog(db *gorm.DB) error {
 }
 
 const mysqlExecutionAuthorizationOwner = "system_execution_authorization"
-const mysqlExecutionAuthorizationVersion = 2
+const mysqlExecutionAuthorizationVersion = 3
 
 //go:embed mysql_execution_authorization_update_v1.sql
 var executionAuthorizationUpdateV1 string
+
+//go:embed mysql_develop_file_guard.sql.tmpl
+var developFileGuardSQL string
 
 //go:embed mysql_execution_authorization_scope.sql
 var executionAuthorizationScope string
@@ -241,6 +244,17 @@ func migrateSystemMySQL(db *gorm.DB, owner string, version int64, directory stri
 // Keep the v1 guards in force until all new triggers have been verified.
 // The final ALTER replaces both checks atomically, including on a resumed deployment.
 func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error {
+	guard, err := template.New("Develop file execution").Parse(developFileGuardSQL)
+	if err != nil {
+		return err
+	}
+	for _, insert := range []bool{true, false} {
+		var sql strings.Builder
+		if err := guard.Execute(&sql, struct{ Insert bool }{insert}); err != nil {
+			return err
+		}
+		triggers = append(triggers, sql.String())
+	}
 	var old bool
 	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.triggers WHERE trigger_schema=DATABASE() AND trigger_name='execution_authorization_validate_update')").Row().Scan(&old); err != nil {
 		return err
@@ -261,12 +275,19 @@ func installExecutionAuthorizationScope(conn *gorm.DB, triggers []string) error 
 	if err := schema.CheckMySQLTriggers(conn, triggers); err != nil {
 		return err
 	}
-	var installed bool
-	if err := conn.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='execution_authorizations' AND constraint_name='ck_execution_authorization_scope_v2')").Row().Scan(&installed); err != nil {
+	var version string
+	if err := conn.Raw(`SELECT constraint_name FROM information_schema.table_constraints WHERE constraint_schema=DATABASE()
+        AND table_name='execution_authorizations' AND constraint_name IN ('ck_execution_authorization_generic_scope','ck_execution_authorization_scope_v2','ck_execution_authorization_scope_v3')`).Row().Scan(&version); err != nil {
 		return err
 	}
-	if installed {
+	switch version {
+	case "ck_execution_authorization_scope_v3":
 		return nil
+	case "ck_execution_authorization_scope_v2":
+		return conn.Exec("ALTER TABLE execution_authorizations DROP CHECK ck_execution_authorization_scope_v2, " + executionAuthorizationScope).Error
+	default:
+		return conn.Exec(`ALTER TABLE execution_authorizations DROP CHECK ck_execution_authorization_generic_scope,
+        DROP CHECK ck_execution_authorization_audience, ADD CONSTRAINT ck_execution_authorization_audience_v2 CHECK (
+            audience IN ('model','quality','develop','transfer','service','duckdb','spark','ontology')), ` + executionAuthorizationScope).Error
 	}
-	return conn.Exec(executionAuthorizationScope).Error
 }
