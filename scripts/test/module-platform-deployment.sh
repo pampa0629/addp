@@ -263,6 +263,12 @@ if [[ "$owner" == asset ]]; then
 fi
 if [[ "$owner" == catalog ]]; then
   (cd "$root/catalog/backend" && ADDP_TEST_CATALOG_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledCatalogFulfillment$' -count=1 -v)
+  (
+    cd "$root/catalog/backend"
+    unset ADDP_DATABASE_DEPLOY_USER ADDP_DATABASE_DEPLOY_PASSWORD
+    ADDP_TEST_CATALOG_DEPLOYMENT=1 GOWORK=off go test ./internal/service -run '^TestInstalledCatalogSharingDecision$' -count=1 -v
+  ) | tee "$work/catalog-sharing-decision.log"
+  grep -q '^--- PASS: TestInstalledCatalogSharingDecision ' "$work/catalog-sharing-decision.log"
 fi
 if [[ "$owner" == graph ]]; then
   (cd "$root/graph/backend" && ADDP_TEST_GRAPH_DEPLOYMENT=1 GOWORK=off go test ./internal/repository -run '^TestInstalledGraphOntology$' -count=1 -v)
