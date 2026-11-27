@@ -223,7 +223,9 @@ func prepareMySQLDevelopFileTenant(t *testing.T, repo *iam.Repository, creator i
 		{"develop-file-approver", "ADDP_TEST_MYSQL_DEVELOP_APPROVER_PASSWORD", "tenant.engine_access_delegation_administrator", []string{
 			"meta.scan_task.execute", "meta.scan_task.read", "system.develop_file_create_approval.create",
 		}},
-		{"develop-file-registrar", "ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD", "tenant.engine_lifecycle_operator", nil},
+		{"develop-file-registrar", "ADDP_TEST_MYSQL_DEVELOP_REGISTRAR_PASSWORD", "", []string{
+			"system.engine.create", "system.engine.execute",
+		}},
 	}
 	facts := map[string]int64{"tenant_id": tenant.ID}
 	members := iam.NewTenantMembershipService(repo, nil)

@@ -20,6 +20,7 @@ ACTOR_PERMISSIONS = {
     'develop.task.read', 'develop.task.execute', 'develop.data_read.execute', 'develop.data_write.execute',
     'system.execution_authorization.create', 'meta.catalog.read',
 }
+REGISTRAR_PERMISSIONS = {'system.engine.create', 'system.engine.execute'}
 WRONG_OWNER_TARGET = 'wrong-owner.gpkg'
 UNAPPROVED_TARGET = 'not-approved.gpkg'
 
@@ -182,10 +183,11 @@ def run(nfs, secret, run_id, artifacts):
                                       facts[f'develop-file-{role.lower()}'], tenant)
                                   for role in ('ACTOR', 'APPROVER', 'REGISTRAR')]
     identity = raster.validate_identity(actor, tenant, required_permissions=ACTOR_PERMISSIONS)
+    registrar_identity = raster.validate_identity(registrar, tenant, required_permissions=REGISTRAR_PERMISSIONS)
     grants = registration.ExactFileReadGrants(approver, actor, tenant, scan_preparation=True, approval_preparation=True)
     descriptor = registration.load_descriptor(secret / 'develop-file-nfs-engine.json')
     engine = registration.register_engine(registrar.base_url, registrar.token, descriptor)
-    record({'stage': 'source_registered', 'identity': identity, 'engine_id': engine})
+    record({'stage': 'source_registered', 'identity': identity, 'registrar_identity': registrar_identity, 'engine_id': engine})
     source_name = PROFILE['source']
     scope = f'addp://engine/{engine}/path/{source_name}?type=file'
 
