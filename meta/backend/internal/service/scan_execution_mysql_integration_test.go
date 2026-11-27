@@ -14,6 +14,7 @@ import (
 	"github.com/addp/common/schema"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/scantask"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -53,6 +54,9 @@ func TestMetaClaimAndTaskSummaryAgainstMySQL(t *testing.T) {
 	if err := repository.MigrateMySQLScanTasks(db); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("startup_backfill_preserves_newer_schedule", func(t *testing.T) {
+		exerciseScheduleStartupBackfill(t, db)
+	})
 	ctx := t.Context()
 	now := time.Now().UTC()
 	create := func(name string, config commonmodels.JSONMap, createdAt time.Time) (*models.ScanTask, string) {
@@ -152,4 +156,66 @@ func TestMetaClaimAndTaskSummaryAgainstMySQL(t *testing.T) {
 			}
 		}
 	})
+}
+
+func exerciseScheduleStartupBackfill(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := t.Context()
+	task := scantask.NewEngineScanTask(998911, 998912, 9, "Schedule backfill", "0 3 * * *", "basic", time.Now(), nil)
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() {
+		if err := db.Unscoped().Delete(task).Error; err != nil {
+			t.Error(err)
+		}
+	})
+
+	due := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
+	later := due.Add(time.Hour)
+	// Both replicas read this version while its next run is still missing.
+	replicaA, replicaB := NewScanTaskScheduler(NewScanTaskService(db), nil).initializeNextRunAt, NewScanTaskScheduler(NewScanTaskService(db), nil).initializeNextRunAt
+	assertNext := func(want *time.Time) {
+		t.Helper()
+		var current models.ScanTask
+		if err := db.First(&current, task.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		got := current.NextRunAt
+		if (want == nil && got != nil) || (want != nil && (got == nil || !got.Equal(*want))) {
+			t.Fatalf("next_run_at = %v, want %v", got, want)
+		}
+	}
+	update := func(values map[string]interface{}) {
+		t.Helper()
+		if err := db.Model(&models.ScanTask{}).Where("id = ?", task.ID).Updates(values).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := replicaA(ctx, *task, due); err != nil {
+		t.Fatal(err)
+	}
+	if err := replicaB(ctx, *task, later); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(&due)
+
+	// A late initializer must preserve a position already advanced by a claim.
+	update(map[string]interface{}{"next_run_at": later})
+	if err := replicaB(ctx, *task, due); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(&later)
+
+	update(map[string]interface{}{"enabled": false, "next_run_at": nil})
+	if err := replicaB(ctx, *task, due); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(nil)
+	update(map[string]interface{}{"enabled": true, "schedule": "0 7 * * *", "next_run_at": nil})
+	if err := replicaB(ctx, *task, due); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(nil)
 }

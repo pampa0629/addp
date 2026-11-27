@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/infra/database"
 	"github.com/addp/transfer/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -25,6 +26,9 @@ func TestInstalledTransferStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = pool.Close() })
+	t.Run("startup_backfill_preserves_newer_schedule", func(t *testing.T) {
+		exerciseScheduleStartupBackfill(t, db)
+	})
 	ctx := context.Background()
 	checkStoredDeadLetter(t, db)
 	bounded, _, err := NewTaskRepository(db).ClaimNextBoundedExecution(ctx, "fixture-worker", time.Minute)
@@ -115,4 +119,64 @@ func testInstalledContinuousCheckpoint(t *testing.T, db *gorm.DB) {
 	if !t.Failed() {
 		t.Log("live lease committed two ordered checkpoints; expired lease could neither claim nor advance")
 	}
+}
+
+func exerciseScheduleStartupBackfill(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	ctx := t.Context()
+	task := models.TransferTask{TenantID: 999999, Name: "schedule-backfill-" + uuid.NewString(), TaskType: "sync", Config: models.JSONMap{}, Schedule: "0 0 3 * * *", Enabled: true, Status: models.TaskStatusIdle}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := db.Unscoped().Delete(&task).Error; err != nil {
+			t.Error(err)
+		}
+	})
+	due := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
+	later := due.Add(time.Hour)
+	// Both replicas read this version while its next run is still missing.
+	replicaA, replicaB := NewTaskRepository(db).InitializeNextRunAt, NewTaskRepository(db).InitializeNextRunAt
+	assertNext := func(want *time.Time) {
+		t.Helper()
+		var current models.TransferTask
+		if err := db.First(&current, task.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		got := current.NextRunAt
+		if (want == nil && got != nil) || (want != nil && (got == nil || !got.Equal(*want))) {
+			t.Fatalf("next_run_at = %v, want %v", got, want)
+		}
+	}
+	update := func(values map[string]interface{}) {
+		t.Helper()
+		if err := db.Model(&models.TransferTask{}).Where("id = ?", task.ID).Updates(values).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := replicaA(ctx, task, due); err != nil {
+		t.Fatal(err)
+	}
+	if err := replicaB(ctx, task, later); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(&due)
+
+	// A late initializer must preserve a position already advanced by a claim.
+	update(map[string]interface{}{"next_run_at": later})
+	if err := replicaB(ctx, task, due); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(&later)
+
+	update(map[string]interface{}{"enabled": false, "next_run_at": nil})
+	if err := replicaB(ctx, task, due); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(nil)
+	update(map[string]interface{}{"enabled": true, "schedule": "0 7 * * *", "next_run_at": nil})
+	if err := replicaB(ctx, task, due); err != nil {
+		t.Fatal(err)
+	}
+	assertNext(nil)
 }
