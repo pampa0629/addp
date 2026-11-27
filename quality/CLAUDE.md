@@ -115,6 +115,9 @@ T4 的 Run ID 保留在报告与资源名称，规则和方案编码使用其 SH
 - 提交 `c001f8814` 的 [Hosted T4 38131938772](https://github.com/pampa0629/addp/actions/runs/38131938772) 夹具准备通过，首次创建规则因编码非法返回 400，业务检查未运行；整套部署最终销毁并确认 Infra 零残留，该轮不计为业务验收通过。
 - 提交 `38506c74f` 的 [Hosted T4 38136346267](https://github.com/pampa0629/addp/actions/runs/38136346267) 已真实通过：16 项检查（含重复失败复测）、五次父编排与 Quality 子执行、两目标隔离和分别恢复、工单去重、显式修订升级、冻结绑定及默认值不漂移；五次子执行各有三条安全过程事件。Monitor-only 用户直读 Quality 返回 403，读取 Monitor 详情和事件返回 404；删除方案后获授权用户仍可读取五次专业执行历史。七个服务构建提交一致，六个临时定义确认删除，业务清理零残留，Hosted Infra 容器／网络／卷退出清理通过。36 个归档文件未包含凭据环境或控制文件，标准令牌模式未检出。该轮证明单次 Hosted 部署的真实权限及执行链路，不替代其他 Owner 或多 Backend 的验收。
 
+- MySQL 平台组合验收首次运行固定 `7451deabb`，正式部署启动了 Quality Backend、Worker 和 Monitor，发布清单顺序断言失败时尚未提交任务，独占资源清理通过。[首次运行](https://github.com/pampa0629/addp/actions/runs/46013663396/job/140555234066)
+- 修正清单断言后，固定 `60b7862a2` 以独占 MySQL 8.0.46 作为平台库、独占 PostgreSQL 15.18 作为只读业务源。普通租户用户经 Gateway 提交一次，返回 202，执行 `45275031-efef-47ba-a9d9-6f208ecabd4d` 的租约所有者与真实 Worker 心跳匹配。放开业务表的短暂观察锁后，Quality 和 Monitor 以相同执行 ID 读回首次尝试成功，Monitor 返回 `started`、`progress`（100%）、`completed`，方案摘要指向原执行。实测读取三行，业务源未改动，容器、网络和卷清理通过。[Hosted 作业](https://github.com/pampa0629/addp/actions/runs/46015722928/job/140562216239) · [验收归档](https://github.com/pampa0629/addp/actions/runs/46015722928/artifacts/15207275374)
+
 ## 数据库启动所有权
 
 当前源码的启动 `SchemaVersion=5`，以 [startup_schema.go](backend/internal/migration/startup_schema.go) 为准；SQL 迁移序号与成功初始化的启动版本分别记录，不由迁移编号推导启动版本。历史迁移见[迁移演进](#迁移演进)。
