@@ -5,9 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/lib/pq"
 	"github.com/ory/fosite"
 	"github.com/ory/fosite/handler/rfc8628"
 	"gorm.io/gorm"
@@ -62,8 +61,8 @@ func (s *Storage) CreateDeviceAuthSession(
 		DeviceCodeHash:      deviceCodeSignature,
 		UserCodeHash:        userCodeSignature,
 		ClientID:            request.GetClient().GetID(),
-		RequestedScopes:     pq.StringArray(append([]string(nil), request.GetRequestedScopes()...)),
-		RequestedAudiences:  pq.StringArray(append([]string(nil), request.GetRequestedAudience()...)),
+		RequestedScopes:     dbtypes.StringArray(append([]string(nil), request.GetRequestedScopes()...)),
+		RequestedAudiences:  dbtypes.StringArray(append([]string(nil), request.GetRequestedAudience()...)),
 		Status:              "pending",
 		PollIntervalSeconds: int(s.devicePollingInterval / time.Second),
 		NextPollAt:          requestedAt.Add(s.devicePollingInterval),
@@ -72,9 +71,7 @@ func (s *Storage) CreateDeviceAuthSession(
 		CreatedAt:           s.now(),
 	}
 	if err := s.dbFromContext(ctx).Create(row).Error; err != nil {
-		var postgresError *pgconn.PgError
-		if errors.As(err, &postgresError) && postgresError.Code == "23505" &&
-			postgresError.ConstraintName == "oauth_device_authorizations_user_code_hash_key" {
+		if isUserCodeCollision(err) {
 			return fosite.ErrExistingUserCodeSignature
 		}
 		return toFositeStorageError(err)
@@ -175,8 +172,11 @@ func (s *Storage) ShouldRateLimit(ctx context.Context, deviceCodeSignature strin
 	if nowError != nil {
 		return false, finish(nowError)
 	}
-	if !row.ExpiresAt.After(now) || row.Status == "invalidated" {
+	if row.Status == "invalidated" || row.Status == "rejected" {
 		return false, finish(nil)
+	}
+	if !row.ExpiresAt.After(now) {
+		return false, finish(fosite.ErrDeviceExpiredToken)
 	}
 	interval := row.PollIntervalSeconds
 	if now.Before(row.NextPollAt) {
@@ -248,13 +248,13 @@ func (s *Storage) decideDeviceAuthorization(
 		return toFositeStorageError(db.Model(&deviceAuthorizationRow{}).Where("id = ? AND status = 'pending'", row.ID).
 			Updates(map[string]interface{}{
 				"status":                       "approved",
-				"granted_scopes":               pq.StringArray(facts.GrantedScopes),
-				"granted_audiences":            pq.StringArray(facts.GrantedAudiences),
+				"granted_scopes":               dbtypes.StringArray(facts.GrantedScopes),
+				"granted_audiences":            dbtypes.StringArray(facts.GrantedAudiences),
 				"principal_id":                 facts.PrincipalID,
 				"context_type":                 facts.ContextType,
 				"tenant_membership_id":         facts.TenantMembershipID,
 				"issued_authorization_version": facts.IssuedAuthorizationVersion,
-				"authentication_methods":       pq.StringArray(facts.AuthenticationMethods),
+				"authentication_methods":       dbtypes.StringArray(facts.AuthenticationMethods),
 				"assurance_level":              facts.AssuranceLevel,
 				"authenticated_at":             facts.AuthenticatedAt.UTC(),
 				"decided_at":                   now,

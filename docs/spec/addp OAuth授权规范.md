@@ -2,7 +2,7 @@
 
 更新日期：2026-08-28
 
-状态：正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码使用受控 Fosite 唯一主路径。System 负责 Provider、协议存储和事务验收。租户外部应用的授权码及 S256 PKCE 会话由所选平台数据库持久化，部署入口准备表和约束，两种数据库执行同一授权流程，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前发布证据只覆盖 macOS Keychain，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS。
+状态：正式规范。OAuth 登录、浏览器会话、资源票据和受委托访问令牌均以本文为准；OAuth 运行代码使用受控 Fosite 唯一主路径。System 负责 Provider、协议存储和事务验收。租户外部应用的授权码、S256 PKCE 会话和 CLI 设备授权由所选平台数据库持久化，部署入口准备表和约束，两种数据库执行同一授权流程，`common-python` 发布门禁负责 wheel 安装后的 RFC 8252 动态 loopback、PKCE、Device Flow、AuthContext、刷新轮换、撤销和真实 OS Keychain 产品 E2E。CLI 最终目标支持主流桌面操作系统；当前发布证据只覆盖 macOS Keychain，不宣称 Windows Credential Manager 或 Linux Secret Service 已完成验证。OIDC 尚未启用，当前唯一运行路径不注册 OpenID Handler、不允许 `openid` Scope，也不宣告 Discovery/JWKS。
 
 System 协议验收与正式 `addp` CLI 使用同一个 `addp-cli` 公共客户端和同一组 OAuth 端点，不保留测试专用授权实现。CLI 的发布、凭据存储、上下文确认和命令契约见第七节；协议与产品 E2E 必须共同通过后才能发布。
 
@@ -184,9 +184,9 @@ CLI loopback listener 必须保持运行，直到收到有效 `/callback`、收�
 2. 用户在 Console `/oauth/device` 登录并确认 User Code。
 3. Console 调用受 Bearer 保护的 `POST /oauth/device/authorizations`。
 4. CLI 按 interval 调用 `/oauth/token`，使用 Device Code grant。
-5. pending 返回 `authorization_pending`；过快返回 `slow_down`；批准后只成功兑换一次。
+5. 等待用户决定时，正常轮询返回 `authorization_pending`，过快轮询返回 `slow_down`。用户拒绝后返回 `access_denied`。等待批准或已获批准的设备码到期后返回 `expired_token`。只有仍有效且已批准的设备码可以成功兑换一次。
 
-Fosite RFC 8628 Handler 必须注入 ADDP PostgreSQL `DeviceRateLimitStrategy`，不能使用默认的空限速实现。每次合法轮询原子更新下一次允许时间；过快轮询返回 `slow_down`，并把当前及后续轮询 interval 增加 5 秒。该协议限速与 Redis 端点滥用防护同时生效，但使用不同状态和错误语义。
+Fosite RFC 8628 Handler 必须注入 部署所选平台数据库上的 ADDP `DeviceRateLimitStrategy`，不能使用默认的空限速实现。等待决定和已批准状态下，有效设备码的轮询原子更新下一次允许时间；过快轮询返回 `slow_down`，并把当前及后续轮询 interval 增加 5 秒。该协议限速与 Redis 端点滥用防护同时生效，但使用不同状态和错误语义。
 
 已兑换 Device Code 再次提交时，必须使用原 Device Request ID 撤销其关联 Token Family；不得使用本次 Token 请求新生成的 Request ID 导致撤销落空。
 
@@ -255,7 +255,7 @@ System 的 `system.audit_logs` 是 OAuth 安全事件的唯一持久化落点，
 
 审计详情只允许保存 `client_id`、`grant_type`、`decision`、`scope` 和稳定 `error_code`；事件名、结果与风险等级进入统一列，不在 JSON 中复制。不得保存或部分保留 Access Token、Refresh Token、Authorization Code、Device Code、User Code、PKCE verifier/challenge、state、Cookie、Authorization Header、原始请求体或原始 query。IP、User-Agent、Request ID、HTTP 状态、Principal 和当前平台或 Tenant 上下文继续使用统一审计字段。尚未建立 AuthContext 的 OAuth 失败使用 `context_type=NULL`，不得伪装成 Platform Context。Refresh Token 重用必须记录 `risk_level=high` 事件并保持 HTTP 响应为 `invalid_grant`，不能向客户端泄露 family、用户或攻击判定细节。
 
-OAuth Request、Code、Device Authorization、Token Family 和撤销状态的成功转换，必须与对应安全审计事件在同一个 PostgreSQL 事务提交；状态转换成功但审计丢失，或审计成功但协议状态回滚，均视为事务失败。纯前置校验失败没有待修改的协议事实时，仍写入一条统一审计事件。
+OAuth Request、Code、Device Authorization、Token Family 和撤销状态的成功转换，必须与对应安全审计事件在同一个平台数据库事务提交；状态转换成功但审计丢失，或审计成功但协议状态回滚，均视为事务失败。纯前置校验失败没有待修改的协议事实时，仍写入一条统一审计事件。
 
 首次切换目标 IAM 时必须按统一破坏性迁移规则重建开发环境 `system` Schema；runner 拒绝旧 IAM Schema，不在 System 启动路径读取或清理旧审计列。需要保留历史审计的环境必须先走独立审批的离线脱敏、归档和导入设计，运行时不保留旧日志格式兼容分支。
 

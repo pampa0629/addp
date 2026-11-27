@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/common/infra/database/dbtypes"
 	"github.com/addp/system/internal/iam"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/lib/pq"
 	"github.com/ory/fosite"
 	"gorm.io/gorm"
 )
@@ -111,30 +112,30 @@ type pkceSessionRow struct {
 func (pkceSessionRow) TableName() string { return "system.oauth_pkce_sessions" }
 
 type deviceAuthorizationRow struct {
-	ID                         uuid.UUID      `gorm:"column:id"`
-	DeviceCodeHash             string         `gorm:"column:device_code_hash"`
-	UserCodeHash               string         `gorm:"column:user_code_hash"`
-	ClientID                   string         `gorm:"column:client_id"`
-	RequestedScopes            pq.StringArray `gorm:"column:requested_scopes;type:text[]"`
-	RequestedAudiences         pq.StringArray `gorm:"column:requested_audiences;type:text[]"`
-	GrantedScopes              pq.StringArray `gorm:"column:granted_scopes;type:text[]"`
-	GrantedAudiences           pq.StringArray `gorm:"column:granted_audiences;type:text[]"`
-	Status                     string         `gorm:"column:status"`
-	PrincipalID                *int64         `gorm:"column:principal_id"`
-	ContextType                *string        `gorm:"column:context_type"`
-	TenantMembershipID         *int64         `gorm:"column:tenant_membership_id"`
-	IssuedAuthorizationVersion *int64         `gorm:"column:issued_authorization_version"`
-	AuthenticationMethods      pq.StringArray `gorm:"column:authentication_methods;type:text[]"`
-	AssuranceLevel             *string        `gorm:"column:assurance_level"`
-	AuthenticatedAt            *time.Time     `gorm:"column:authenticated_at"`
-	PollIntervalSeconds        int            `gorm:"column:poll_interval_seconds"`
-	NextPollAt                 time.Time      `gorm:"column:next_poll_at"`
-	LastPolledAt               *time.Time     `gorm:"column:last_polled_at"`
-	RequestedAt                time.Time      `gorm:"column:requested_at"`
-	ExpiresAt                  time.Time      `gorm:"column:expires_at"`
-	DecidedAt                  *time.Time     `gorm:"column:decided_at"`
-	InvalidatedAt              *time.Time     `gorm:"column:invalidated_at"`
-	CreatedAt                  time.Time      `gorm:"column:created_at"`
+	ID                         uuid.UUID           `gorm:"column:id"`
+	DeviceCodeHash             string              `gorm:"column:device_code_hash"`
+	UserCodeHash               string              `gorm:"column:user_code_hash"`
+	ClientID                   string              `gorm:"column:client_id"`
+	RequestedScopes            dbtypes.StringArray `gorm:"column:requested_scopes"`
+	RequestedAudiences         dbtypes.StringArray `gorm:"column:requested_audiences"`
+	GrantedScopes              dbtypes.StringArray `gorm:"column:granted_scopes"`
+	GrantedAudiences           dbtypes.StringArray `gorm:"column:granted_audiences"`
+	Status                     string              `gorm:"column:status"`
+	PrincipalID                *int64              `gorm:"column:principal_id"`
+	ContextType                *string             `gorm:"column:context_type"`
+	TenantMembershipID         *int64              `gorm:"column:tenant_membership_id"`
+	IssuedAuthorizationVersion *int64              `gorm:"column:issued_authorization_version"`
+	AuthenticationMethods      dbtypes.StringArray `gorm:"column:authentication_methods"`
+	AssuranceLevel             *string             `gorm:"column:assurance_level"`
+	AuthenticatedAt            *time.Time          `gorm:"column:authenticated_at"`
+	PollIntervalSeconds        int                 `gorm:"column:poll_interval_seconds"`
+	NextPollAt                 time.Time           `gorm:"column:next_poll_at"`
+	LastPolledAt               *time.Time          `gorm:"column:last_polled_at"`
+	RequestedAt                time.Time           `gorm:"column:requested_at"`
+	ExpiresAt                  time.Time           `gorm:"column:expires_at"`
+	DecidedAt                  *time.Time          `gorm:"column:decided_at"`
+	InvalidatedAt              *time.Time          `gorm:"column:invalidated_at"`
+	CreatedAt                  time.Time           `gorm:"column:created_at"`
 }
 
 func (deviceAuthorizationRow) TableName() string {
@@ -321,10 +322,14 @@ func toFositeStorageError(err error) error {
 	return fmt.Errorf("OAuth Storage 操作失败: %w", err)
 }
 
-func isUniqueViolation(err error, constraint string) bool {
-	var postgresError *pgconn.PgError
-	return errors.As(err, &postgresError) && postgresError.Code == "23505" &&
-		(constraint == "" || postgresError.ConstraintName == constraint)
+func isUserCodeCollision(err error) bool {
+	const key = "oauth_device_authorizations_user_code_hash_key"
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		return pg.Code == "23505" && pg.ConstraintName == key
+	}
+	var my *mysqlDriver.MySQLError
+	return errors.As(err, &my) && my.Number == 1062 && strings.HasSuffix(my.Message, "'oauth_device_authorizations."+key+"'")
 }
 
 var _ fosite.Storage = (*Storage)(nil)

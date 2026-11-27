@@ -870,6 +870,7 @@ func TestIAMOAuthHandlerDeviceTokenRevocationAgainstPostgres(t *testing.T) {
 	if revokedFamilies != 1 {
 		t.Fatalf("revoked OAuth family count = %d, want 1", revokedFamilies)
 	}
+	t.Run("device grant decisions", func(t *testing.T) { exerciseDeviceGrant(t, db, authContext) })
 }
 
 func performIAMOAuthFormRequest(

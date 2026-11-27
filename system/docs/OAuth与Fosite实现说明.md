@@ -60,7 +60,7 @@ OIDC Claims 和 Headers 的结构能力可以存在于 Fosite Session 实现中�
 
 ## 五、Storage Adapter
 
-System 的 Storage Adapter 消费部署选定的平台数据库。租户外部应用的授权码与 PKCE 会话在 PostgreSQL 和 MySQL 上沿用同一套 Fosite 流程。主要映射如下。
+System 的 Storage Adapter 消费部署选定的平台数据库。租户外部应用的授权码与 PKCE 会话、CLI 设备授权在 PostgreSQL 和 MySQL 上沿用同一套 Fosite 流程。主要映射如下。
 
 | 协议事实 | 平台数据库表 |
 | --- | --- |
@@ -77,7 +77,7 @@ System 的 Storage Adapter 消费部署选定的平台数据库。租户外部�
 
 ## 六、事务与锁
 
-授权码兑换、Device Code 兑换和 Refresh Rotation 必须通过 Adapter 事务扩展把 Fosite Handler 的多步操作收敛为一个 PostgreSQL 事务。
+授权码兑换、Device Code 兑换和 Refresh Rotation 必须通过 Adapter 事务扩展把 Fosite Handler 的多步操作收敛为一个平台数据库事务。
 
 统一锁顺序从 Principal、Token Family、协议请求进入具体 Code/Token 行。事务内禁止 Redis、HTTP、外部 IdP、审计导出或密钥服务调用。
 
