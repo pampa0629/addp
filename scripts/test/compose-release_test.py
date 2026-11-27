@@ -46,7 +46,11 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         self.assertIn("minio", config["services"])
         self.assertNotIn("manager-search-redis", config["services"])
         self.assertNotIn("meilisearch", config["services"])
+        self.assertNotIn("search-source", config["services"])
         self.assertIn("meilisearch", manager["services"])
+        source = manager["services"]["search-source"]
+        self.assertEqual(source["environment"]["POSTGRES_DB"], "search_fixture")
+        self.assertFalse(source.get("ports"))
         mounts = manager["services"]["manager-search-redis"]["volumes"]
         script = next(mount["source"] for mount in mounts if mount["target"] == "/addp/manager-search-redis.sh")
         self.assertEqual(Path(script).resolve(), ROOT / "scripts/infra/manager-search-redis.sh")
@@ -87,8 +91,9 @@ class HostedMySQLReleaseTest(unittest.TestCase):
         events = workflow.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([\w-]+):", events, re.MULTILINE), ["workflow_dispatch"])
         self.assertIn("options: [gateway, service-lineage, manager]", events)
-        probe = ROOT / "scripts/test/mysql-service-lineage-online.py"
-        compile(probe.read_text(), str(probe), "exec")
+        for name in ("mysql-service-lineage-online.py", "mysql-manager-search-online.py"):
+            probe = ROOT / "scripts/test" / name
+            compile(probe.read_text(), str(probe), "exec")
         self.assertIn("\npermissions:\n  contents: read\n", workflow)
         self.assertIn(f"run: bash {entry.relative_to(ROOT)}", workflow)
 

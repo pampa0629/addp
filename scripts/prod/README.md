@@ -69,6 +69,8 @@ Runtime 选择与观测能力一并冻结到发布清单。所选服务的镜像
 
 在 GitHub Actions 手工运行 Online MySQL platform。该模式从当次固定提交运行 `scripts/prod/deploy.sh`，使用独占 MySQL 8、Redis、MinIO 和 Registry。通过限定版公共地址验证普通租户用户读取资料、修改密码、旧会话失效及新凭据回读。验收记录数据库版本、运行身份的 DDL 拒绝和容器、网络、卷的清理结果。
 
+`manager` 场景以 MySQL 为平台库，另起独占 PostgreSQL 业务源。Meta 扫描两张表，由 Manager 正式投递到 Meilisearch。普通租户用户经 Gateway 核对两条关键词命中和真实下一页。另一个租户用户撤销其中一条精确读取授权后，原游标须返回 `409/search_context_changed`，新查询只返回仍获授权的文档。归档保存文档和授权编号、HTTP 结果及清理状态。
+
 ## stop.sh
 
 **用途**: 停止平台与内置 Runtime 容器，保留基础设施、Business 服务及全部数据卷

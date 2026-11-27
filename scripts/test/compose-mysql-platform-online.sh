@@ -124,10 +124,16 @@ for key in REDIS_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD IAM_MFA_ENCRYPTION
   export "$key=$value"
 done
 unset value
-export MYSQL_FIXTURE_IMAGE MEILISEARCH_FIXTURE_IMAGE
+export MYSQL_FIXTURE_IMAGE MEILISEARCH_FIXTURE_IMAGE SEARCH_SOURCE_IMAGE SEARCH_SOURCE_ADMIN_PASSWORD
 MYSQL_FIXTURE_IMAGE=$(docker compose -f scripts/test/docker-compose.local-macos-ci.yml config --images mysql)
 if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
   MEILISEARCH_FIXTURE_IMAGE=$(docker compose --env-file .env -f docker-compose.infra.yml config --images meilisearch)
+  SEARCH_SOURCE_IMAGE=$(ADDP_INFRA_GATE_PASSWORD=fixture ADDP_INFRA_GATE_MANAGER_PASSWORD=fixture \
+    docker compose --env-file /dev/null -f scripts/test/docker-compose.system-infra-configuration-t2.yml config --images postgres)
+  SEARCH_SOURCE_ADMIN_PASSWORD=$(openssl rand -hex 24)
+  export ADDP_TEST_MYSQL_SEARCH_OPERATOR_PASSWORD SEARCH_SOURCE_READER_PASSWORD
+  ADDP_TEST_MYSQL_SEARCH_OPERATOR_PASSWORD=$(openssl rand -hex 24)
+  SEARCH_SOURCE_READER_PASSWORD=$(openssl rand -hex 24)
   fixture_compose+=(--profile manager)
 fi
 cat > "$work/compose.yml" <<'YAML'
@@ -184,6 +190,17 @@ services:
     extends:
       file: ${GITHUB_WORKSPACE:?}/scripts/infra/manager-search-redis.yml
       service: manager-search-redis
+  search-source:
+    profiles: [manager]
+    image: ${SEARCH_SOURCE_IMAGE:-postgres:15}
+    environment:
+      POSTGRES_DB: search_fixture
+      POSTGRES_PASSWORD: ${SEARCH_SOURCE_ADMIN_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "search_fixture"]
+      interval: 3s
+      timeout: 4s
+      retries: 30
   registry:
     image: registry:2
     ports: ["127.0.0.1:5001:5000"]
@@ -320,6 +337,15 @@ if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
   done
   [[ "$initialized" == 1 ]] || { echo "Manager protection initialization incomplete for Tenant $tenant_id" >&2; exit 1; }
   printf 'manager_protection_initialized_tenant=%s\n' "$tenant_id" | tee "$artifacts/manager-protection.txt"
+  fixture exec -T search-source psql -X -v ON_ERROR_STOP=1 -U postgres -d search_fixture <<SQL
+CREATE TABLE hostedcursor_orders (id integer PRIMARY KEY);
+CREATE TABLE hostedcursor_shipments (id integer PRIMARY KEY);
+INSERT INTO hostedcursor_orders VALUES (1);
+INSERT INTO hostedcursor_shipments VALUES (2);
+CREATE ROLE search_reader LOGIN PASSWORD '$SEARCH_SOURCE_READER_PASSWORD';
+GRANT USAGE ON SCHEMA public TO search_reader;
+GRANT SELECT ON hostedcursor_orders, hostedcursor_shipments TO search_reader;
+SQL
 fi
 
 stage=gateway
@@ -400,10 +426,15 @@ if os.environ["ADDP_DEPLOYMENT_MODULES"] == "manager,security":
         "search_history_round_trip": True,
         "http_statuses": {label: status for label, status in checks.items() if "manager_" in label},
     }))
+    Path(sys.argv[1]).with_name("manager-reader.token").write_text(replacement)
 print(json.dumps(checks))
 PY
 if [[ "$ADDP_DEPLOYMENT_MODULES" == service ]]; then
   stage=service-lineage
   python3 scripts/test/mysql-service-lineage-online.py "$work" "$(fixture ps -q mysql)" "$artifacts"
+fi
+if [[ "$ADDP_DEPLOYMENT_MODULES" == manager,security ]]; then
+  stage=manager-search-cursor
+  python3 scripts/test/mysql-manager-search-online.py "$work" "$artifacts"
 fi
 stage=complete

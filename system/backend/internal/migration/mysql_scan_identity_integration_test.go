@@ -80,7 +80,7 @@ func testMySQLScanIdentity(t *testing.T, db *gorm.DB, tenantID, adminID int64) {
 	}
 }
 
-func assignMySQLFixtureRole(t *testing.T, repo *iam.Repository, tenantID, adminID, principalID int64, roleKey string) {
+func assignMySQLFixtureRole(t *testing.T, repo *iam.Repository, tenantID, adminID, principalID int64, roleKeys ...string) {
 	t.Helper()
 	ctx := t.Context()
 	member, err := iam.NewTenantMembershipService(repo, nil).EstablishMembership(ctx, iam.EstablishTenantMembershipInput{
@@ -89,22 +89,31 @@ func assignMySQLFixtureRole(t *testing.T, repo *iam.Repository, tenantID, adminI
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := repo.GetActiveBuiltinRoleByKey(ctx, roleKey)
-	if err != nil {
-		t.Fatal(err)
+	roleIDs := make([]int64, 0, len(roleKeys))
+	expected := make(map[string]bool, len(roleKeys))
+	for _, roleKey := range roleKeys {
+		role, err := repo.GetActiveBuiltinRoleByKey(ctx, roleKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		roleIDs = append(roleIDs, role.ID)
+		expected[role.RoleKey] = true
 	}
 	assignments, err := iam.NewTenantRoleService(repo, nil).CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{
-		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "MySQL platform acceptance",
+		TenantID: tenantID, MembershipID: member.Membership.ID, RoleIDs: roleIDs, ActorPrincipalID: adminID, Reason: "MySQL platform acceptance",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(assignments) != 1 {
-		t.Fatalf("expected one assignment, got %d", len(assignments))
+	if len(assignments) != len(roleKeys) {
+		t.Fatalf("expected %d assignments, got %d", len(roleKeys), len(assignments))
 	}
-	if got := assignments[0]; got.RoleKey != role.RoleKey || got.EffectiveState != "effective" {
-		dbNow, err := repo.CurrentDatabaseTime(ctx)
-		t.Fatalf("created role=%q state=%q valid_from=%s db_now=%s: %v", got.RoleKey, got.EffectiveState, got.ValidFrom, dbNow, err)
+	for _, got := range assignments {
+		if !expected[got.RoleKey] || got.EffectiveState != "effective" {
+			dbNow, err := repo.CurrentDatabaseTime(ctx)
+			t.Fatalf("created role=%q state=%q valid_from=%s db_now=%s: %v", got.RoleKey, got.EffectiveState, got.ValidFrom, dbNow, err)
+		}
+		delete(expected, got.RoleKey)
 	}
 }
 
@@ -158,6 +167,14 @@ func TestPrepareMySQLGatewayTenant(t *testing.T) {
 			t.Fatal(err)
 		}
 		assignMySQLFixtureRole(t, repo, tenant.ID, admin.PrincipalID, publisher.PrincipalID, "tenant.service_publisher")
+	}
+	if password := os.Getenv("ADDP_TEST_MYSQL_SEARCH_OPERATOR_PASSWORD"); password != "" {
+		operator, err := identities.CreateLocalUser(ctx, iam.CreateLocalUserInput{Username: "search-operator", DisplayName: "Search fixture operator", Password: password})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assignMySQLFixtureRole(t, repo, tenant.ID, admin.PrincipalID, operator.PrincipalID,
+			"tenant.data_steward", "tenant.engine_lifecycle_operator", "tenant.engine_access_delegation_administrator")
 	}
 	t.Run("ExecutionAuthorization", func(t *testing.T) {
 		testMySQLExecutionAuthorization(t, db, tenant.ID, admin.PrincipalID)
