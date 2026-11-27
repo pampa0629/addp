@@ -54,6 +54,9 @@ func TestInstalledModelEntity(t *testing.T) {
 	t.Run("logical_table_field_version", func(t *testing.T) {
 		exerciseLogicalTableFieldVersion(t, db, 12)
 	})
+	t.Run("fact_dimension_relation_version", func(t *testing.T) {
+		testDimensionRelationOwnershipAndUpdates(t, db, 13)
+	})
 	t.Run("entity_relation_revision", func(t *testing.T) {
 		const relationTenant = 11
 		exerciseEntityRelationRevision(t, db, relationTenant)

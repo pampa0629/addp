@@ -26,7 +26,9 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	}
 	fact := models.LogicalTable{TenantID: tenantID, Name: "Participation", Code: "relation_fact", TableType: "fact", Layer: layer.LayerCode, Status: "draft", Version: 1, CreatedBy: tenantID, Materialization: models.JSONB{}}
 	dimension := models.LogicalTable{TenantID: tenantID, Name: "Person", Code: "relation_dimension", TableType: "dimension", Layer: layer.LayerCode, Status: "approved", Version: 9, CreatedBy: tenantID, Materialization: models.JSONB{}}
-	for _, table := range []*models.LogicalTable{&fact, &dimension} {
+	otherFact := fact
+	otherFact.Name, otherFact.Code = "Unrelated fact", "other_relation_fact"
+	for _, table := range []*models.LogicalTable{&fact, &dimension, &otherFact} {
 		if err := db.Create(table).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -51,6 +53,17 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertVersions := func(expectedFactVersion int64) {
+		t.Helper()
+		for _, expected := range []struct{ id, version int64 }{
+			{fact.ID, expectedFactVersion}, {dimension.ID, dimension.Version}, {otherFact.ID, otherFact.Version},
+		} {
+			table, err := tableRepo.GetByID(expected.id, tenantID)
+			if err != nil || table.Version != expected.version {
+				t.Fatalf("table %d: want version %d, got %+v err=%v", expected.id, expected.version, table, err)
+			}
+		}
+	}
 	req := models.SaveTableRelationRequest{Version: fact.Version, SourceField: source.ID, TargetTable: dimension.ID, TargetField: target.ID, RelationType: "fk"}
 	added, err := svc.AddDimensionRelation(fact.ID, tenantID, &req)
 	if err != nil {
@@ -59,6 +72,10 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	if added.Version != 2 {
 		t.Fatalf("version = %d", added.Version)
 	}
+	assertVersions(2)
+	_, err = svc.AddDimensionRelation(fact.ID, tenantID, &req)
+	requireDomainErrorCode(t, err, "resource_version_conflict")
+	assertVersions(2)
 	created, err := repo.GetByID(added.Relation.ID, fact.ID, tenantID)
 	if err != nil {
 		t.Fatal(err)
@@ -89,10 +106,22 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	if updated.Relation.ID != created.ID || !updated.Relation.CreatedAt.Equal(created.CreatedAt) || updated.Version != 3 || updated.Relation.TargetField != alternate.ID {
 		t.Fatalf("update replaced identity or did not update mapping: %+v", updated)
 	}
-	_, err = svc.UpdateDimensionRelation(added.Relation.ID, fact.ID, tenantID, &req)
+	assertVersions(3)
+	persisted, err := repo.GetByID(added.Relation.ID, fact.ID, tenantID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := req
+	stale.TargetField, stale.RelationType = target.ID, "fk"
+	_, err = svc.UpdateDimensionRelation(added.Relation.ID, fact.ID, tenantID, &stale)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
 	_, err = svc.RemoveDimensionRelation(added.Relation.ID, fact.ID, tenantID, req.Version)
 	requireDomainErrorCode(t, err, "resource_version_conflict")
+	assertVersions(3)
+	afterConflict, err := repo.GetByID(added.Relation.ID, fact.ID, tenantID)
+	if err != nil || !reflect.DeepEqual(afterConflict, persisted) {
+		t.Fatalf("stale update or delete changed the association: %+v err=%v", afterConflict, err)
+	}
 	req.Version = updated.Version
 	_, err = svc.AddDimensionRelation(fact.ID, tenantID, &req)
 	requireDomainErrorCode(t, err, "table_relation_conflict")
@@ -126,9 +155,12 @@ func testDimensionRelationOwnershipAndUpdates(t *testing.T, db *gorm.DB, tenantI
 	if err != nil || removed.Version != 4 {
 		t.Fatalf("remove approved dimension reference: %+v %v", removed, err)
 	}
-	rows, err := svc.ListDimensionRelations(dimension.ID, tenantID)
-	if err != nil || len(rows) != 0 {
-		t.Fatalf("incoming references after deletion: %+v %v", rows, err)
+	assertVersions(4)
+	for _, id := range []int64{fact.ID, dimension.ID} {
+		rows, err := svc.ListDimensionRelations(id, tenantID)
+		if err != nil || len(rows) != 0 {
+			t.Fatalf("remaining references for table %d after deletion: %+v %v", id, rows, err)
+		}
 	}
 	dimensionAfter, err := tableRepo.GetByID(dimension.ID, tenantID)
 	if err != nil {
