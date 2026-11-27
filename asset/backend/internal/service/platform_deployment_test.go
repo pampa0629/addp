@@ -92,6 +92,24 @@ func TestInstalledAssetCategories(t *testing.T) {
 			t.Fatal(err)
 		}
 		check("/data-apps/" + resourceID)
+		ratings := NewRatingService(db)
+		t.Run("RatingCreateOnce", func(t *testing.T) {
+			first, err := ratings.Create(77, 12, asset.ID, &RatingWriteReq{Score: 4, Tags: []string{"content"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ratings.Create(77, 12, asset.ID, &RatingWriteReq{Score: 1, Comment: "second submission"})
+			if !errors.Is(err, ErrRatingAlreadyExists) {
+				t.Fatalf("duplicate creation: got %v, want already exists", err)
+			}
+			stored, err := ratings.GetByUser(77, 12, asset.ID)
+			if err != nil || stored == nil || stored.ID != first.ID || stored.Score != 4 || len(stored.Tags) != 1 || stored.Tags[0] != "content" || stored.Comment != "" {
+				t.Fatalf("first rating after duplicate: %+v, %v", stored, err)
+			}
+			if _, err := ratings.Update(77, 12, asset.ID, &RatingWriteReq{Score: 5}); err != nil {
+				t.Fatal(err)
+			}
+		})
 		other, total, err := apps.ListForApplicant(77, 13, ApplicationListParams{AssetID: asset.ID})
 		if err != nil || total != 0 || len(other) != 0 {
 			t.Fatalf("other applicant: rows=%+v total=%d err=%v", other, total, err)
@@ -100,5 +118,8 @@ func TestInstalledAssetCategories(t *testing.T) {
 			t.Fatal(err)
 		}
 		check("")
+		if _, err := ratings.Update(77, 12, asset.ID, &RatingWriteReq{Score: 2}); !errors.Is(err, ErrRatingAccessDenied) {
+			t.Fatalf("rating after authorization revocation: got %v", err)
+		}
 	})
 }

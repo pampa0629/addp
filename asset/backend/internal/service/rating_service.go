@@ -174,14 +174,13 @@ func (s *RatingService) withEffectiveAuthorization(tenantID uint, userID, assetI
 func (s *RatingService) Create(tenantID uint, userID, assetID int64, req *RatingWriteReq) (*models.Rating, error) {
 	rating := ratingForWrite(tenantID, userID, assetID, req)
 	err := s.withEffectiveAuthorization(tenantID, userID, assetID, func(tx *gorm.DB) error {
-		result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rating)
-		if result.Error != nil {
-			return result.Error
+		err := tx.Create(&rating).Error
+		if err != nil {
+			if translator, ok := tx.Dialector.(gorm.ErrorTranslator); ok && errors.Is(translator.Translate(err), gorm.ErrDuplicatedKey) {
+				return ErrRatingAlreadyExists
+			}
 		}
-		if result.RowsAffected == 0 {
-			return ErrRatingAlreadyExists
-		}
-		return nil
+		return err
 	})
 	if err != nil {
 		return nil, err
