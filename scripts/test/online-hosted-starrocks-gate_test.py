@@ -37,7 +37,7 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
               [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
-        for engine in ('doris', 'clickhouse'):
+        for engine in ('doris', 'clickhouse', 'oracle'):
             self.host._write_repository_script(f'scripts/test/common-{engine}-decimal-gate.sh', f"""
                 #!/usr/bin/env bash
                 echo "{engine}-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
@@ -83,7 +83,7 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
 
     def test_analytical_fixtures_reuse_identity_revocation_and_cleanup(self):
-        for engine in ('doris', 'clickhouse'):
+        for engine in ('doris', 'clickhouse', 'oracle'):
             for failure in ('', 'online-start'):
                 with self.subTest(engine=engine, failure=failure):
                     self.host.trace.unlink(missing_ok=True)

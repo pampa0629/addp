@@ -200,7 +200,7 @@ func (p *OraclePlugin) GenerateSampleQuery(_ context.Context, _ plugin.Connectio
 }
 
 func (p *OraclePlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, p.resolveQueryReadSet, nil)
 }
 
 func (p *OraclePlugin) SQLDialect() string {

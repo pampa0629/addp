@@ -242,8 +242,12 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 		if metaCalls != before {
 			t.Fatal("proven empty source enumerated Meta")
 		}
-		for _, engineType := range []string{"mysql", "tidb", "oceanbase", "starrocks", "doris", "clickhouse"} {
-			t.Run(engineType+" database paths and current Grants", func(t *testing.T) {
+		for _, engineType := range []string{"mysql", "tidb", "oceanbase", "starrocks", "doris", "clickhouse", "oracle"} {
+			namespace, otherNamespace := plugin.EngineCatalogTermDatabase, plugin.EngineCatalogTermSchema
+			if engineType == "oracle" {
+				namespace, otherNamespace = otherNamespace, namespace
+			}
+			t.Run(engineType+" "+namespace+" paths and current Grants", func(t *testing.T) {
 				tenantID := uint(tenant)
 				nativeEngine := models.Engine{Name: "Develop " + engineType + " source authorization fixture", EngineType: engineType, TenantID: &tenantID, Version: 1, LifecycleState: "active", ConnectionInfo: models.ConnectionInfo{}, IdentityKey: models.JSONString(`{"host":"develop-` + engineType + `-grant.invalid","database":"fixture"}`)}
 				if err := db.WithContext(ctx).Table("system.engines").Create(&nativeEngine).Error; err != nil {
@@ -253,8 +257,8 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 				if err != nil {
 					t.Fatal(err)
 				}
-				first := plugin.TabularItemPath(nativeEngine.ID, "database", "fixture", "authorized")
-				second := plugin.TabularItemPath(nativeEngine.ID, "database", "fixture", "ungranted")
+				first := plugin.TabularItemPath(nativeEngine.ID, namespace, "fixture", "authorized")
+				second := plugin.TabularItemPath(nativeEngine.ID, namespace, "fixture", "ungranted")
 				service := NewService(NewRepository(db), nil).WithAuthorizationFactsReader(testMetaFacts{paths: []plugin.EngineCatalogPath{first, second}})
 				request := client.DevelopQueryReadRequest{AuthorizationID: strconv.FormatInt(issued.ID, 10), ExecutionID: issued.ExecutionID.String(), EngineID: strconv.FormatUint(uint64(nativeEngine.ID), 10), EngineVersion: strconv.FormatInt(nativeEngine.Version, 10), SampleCredential: token}
 				check := func(allowed bool, paths ...plugin.EngineCatalogPath) {
@@ -286,7 +290,7 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 				}
 				check(true, first)
 				check(false, first, second)
-				check(false, plugin.TabularItemPath(nativeEngine.ID, "schema", "fixture", "authorized"))
+				check(false, plugin.TabularItemPath(nativeEngine.ID, otherNamespace, "fixture", "authorized"))
 				row := GrantRevocation{RequestID: grant.RequestID, RevokedByPrincipalID: actor.PrincipalID, RevokedByMembershipID: actor.MembershipID, Reason: "Withdraw native source fixture", RevokedRequestIDs: []uuid.UUID{grant.RequestID}}
 				if err := db.WithContext(ctx).Create(&row).Error; err != nil {
 					t.Fatal(err)

@@ -13,15 +13,31 @@ TEST_PATTERN='^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites
 ORACLE_PASSWORD='addp_oracle_sys_password'
 ORACLE_USER=addp
 ORACLE_APP_PASSWORD='addp_oracle_password'
-WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-oracle-decimal.XXXXXX")
 CONTAINER_OWNED=false
+MODE=${1:-test}
+OWNER=oracle-native-test
+if [[ "$MODE" == online-* ]]; then
+    [ "${GITHUB_ACTIONS:-}/${RUNNER_OS:-}/${ADDP_ONLINE_HOST:-}/${ONLINE_SUITE_INPUT:-}" = "true/Linux/1/oracle-consumer-flow" ] ||
+        { echo "disposable Hosted Oracle required" >&2; exit 1; }
+    CONTAINER_NAME=addp-oracle-source-online
+    OWNER="oracle-consumer-flow:${GITHUB_RUN_ID:?}:${GITHUB_RUN_ATTEMPT:?}"
+fi
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-oracle-decimal.XXXXXX")
+
+check_owned() {
+    [ "$(docker inspect --format '{{index .Config.Labels "com.addp.online-fixture"}}' "$CONTAINER_NAME")" = "$OWNER" ]
+}
+
+admin_sql() {
+    docker exec -i "$CONTAINER_NAME" sh -c 'exec sqlplus -s "system/$ORACLE_PASSWORD@//localhost:1521/FREEPDB1"'
+}
 
 cleanup() {
     local status=$?
     trap - EXIT
     set +e
     if [ "$CONTAINER_OWNED" = true ] && docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-        if [ "$status" -ne 0 ]; then
+        if [ "$status" -ne 0 ] && [ "$MODE" != online-start ]; then
             docker logs "$CONTAINER_NAME" > "$WORK_DIR/oracle-container.log" 2>&1
             tail -n 200 "$WORK_DIR/oracle-container.log" >&2
         fi
@@ -63,14 +79,42 @@ case "${1:-}" in
         fi
         exit 0
         ;;
-    --spatial)
+    online-stop)
+        if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            check_owned
+            volumes=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$CONTAINER_NAME")
+            docker rm --force --volumes "$CONTAINER_NAME" >/dev/null
+            for volume in $volumes; do
+                [ -z "$(docker volume ls -q --filter "name=^$volume$")" ]
+            done
+        fi
+        [ -z "$(docker ps -aq --filter "label=com.addp.online-fixture=$OWNER")" ]
+        echo 'Oracle Hosted source cleanup passed'
+        exit 0
+        ;;
+    online-audit)
+        check_owned
+        admin_sql <<'SQL'
+WHENEVER SQLERROR EXIT FAILURE
+SET PAGESIZE 0 HEADING OFF FEEDBACK OFF VERIFY OFF LINESIZE 200 TRIMOUT ON
+SELECT sessionid || ':' || statement_id
+FROM unified_audit_trail
+WHERE dbusername='BUSINESS_READER' AND action_name='SELECT'
+  AND object_schema='ADDP' AND object_name IN ('CUSTOMER_LOCATIONS','ORDERS')
+GROUP BY sessionid, statement_id
+ORDER BY min(event_timestamp_utc), sessionid, statement_id;
+EXIT SUCCESS
+SQL
+        exit
+        ;;
+    --spatial|online-start)
         if [ "$#" -ne 1 ]; then
             echo "spatial Oracle verification accepts no additional arguments" >&2
             exit 2
         fi
         ORACLE_IMAGE='gvenzl/oracle-free:23@sha256:e2763af84ecc345d48e4e3fe7999d0b7bb57885b6e0166051acd5f62e27eb605'
         SPATIAL_INTEGRATION=1
-        TEST_PATTERN='^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix|ReadOnlyCatalog|SpatialDelete)$'
+        TEST_PATTERN='^TestIntegrationOracle(DecimalTableWriteDefinition|TypedJSONWrites|PartitionedApplyScalarTypeMatrix|ReadOnlyCatalog|SpatialDelete|GuardedQueryRead)$'
         ;;
     '')
         if [ "$#" -ne 0 ]; then
@@ -95,6 +139,7 @@ fi
 CONTAINER_OWNED=true
 docker run --detach \
     --name "$CONTAINER_NAME" \
+    --label "com.addp.online-fixture=$OWNER" \
     --publish 127.0.0.1::1521 \
     --env "ORACLE_PASSWORD=$ORACLE_PASSWORD" \
     --env "APP_USER=$ORACLE_USER" \
@@ -136,6 +181,46 @@ if [ "$SPATIAL_INTEGRATION" = 1 ]; then
         docker exec -i "$CONTAINER_NAME" sqlplus -s "$ORACLE_USER/$ORACLE_APP_PASSWORD@//localhost:1521/FREEPDB1"
     }
     seed_business_samples
+    if [ "$MODE" = online-start ]; then
+        reader_password="Addp$(openssl rand -hex 20)"
+        if ! admin_sql > "$WORK_DIR/seed-reader.log" 2>&1 <<SQL
+WHENEVER SQLERROR EXIT FAILURE ROLLBACK
+CREATE USER business_reader IDENTIFIED BY "$reader_password";
+GRANT CREATE SESSION TO business_reader;
+GRANT SELECT ON ADDP.CUSTOMER_LOCATIONS TO business_reader;
+GRANT SELECT ON ADDP.ORDERS TO business_reader;
+CREATE AUDIT POLICY ADDP_SQL_SOURCE_READ ACTIONS SELECT ON ADDP.CUSTOMER_LOCATIONS, SELECT ON ADDP.ORDERS;
+AUDIT POLICY ADDP_SQL_SOURCE_READ BY BUSINESS_READER;
+EXIT SUCCESS
+SQL
+        then
+            sed "s/$reader_password/[redacted]/g" "$WORK_DIR/seed-reader.log" >&2
+            exit 1
+        fi
+        umask 077
+        ADDP_ORACLE_READER_PASSWORD="$reader_password" python3 - "$host_port" "${ADDP_ONLINE_SECRET_DIR:?}/oracle-engine.json" <<'PYTHON'
+import json
+import os
+from pathlib import Path
+import sys
+
+port, output = sys.argv[1:]
+descriptor = {
+    "engine_type": "oracle", "engine_origin": "general",
+    "name": "Oracle isolated source",
+    "description": "Oracle Develop source authorization fixture",
+    "connection_info": {
+        "host": "127.0.0.1", "port": int(port), "service_name": "FREEPDB1",
+        "user": "business_reader", "password": os.environ["ADDP_ORACLE_READER_PASSWORD"],
+    },
+}
+with Path(output).open("x") as file:
+    json.dump(descriptor, file)
+PYTHON
+        CONTAINER_OWNED=false
+        echo 'Oracle Hosted source ready'
+        exit 0
+    fi
     sample_sql <<'SQL'
 WHENEVER SQLERROR EXIT FAILURE ROLLBACK
 UPDATE customers SET name = 'edited before reseeding' WHERE id = 1;
@@ -170,6 +255,7 @@ ADDP_TEST_ORACLE_PORT="$host_port" \
 ADDP_TEST_ORACLE_SERVICE_NAME=FREEPDB1 \
 ADDP_TEST_ORACLE_USER="$ORACLE_USER" \
 ADDP_TEST_ORACLE_PASSWORD="$ORACLE_APP_PASSWORD" \
+ADDP_TEST_ORACLE_ADMIN_PASSWORD="$ORACLE_PASSWORD" \
     go test ./engine/plugins/oracle \
     -run "$TEST_PATTERN" \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-oracle-decimal.log"

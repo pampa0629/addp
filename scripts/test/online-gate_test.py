@@ -321,6 +321,7 @@ class OnlineGateTest(unittest.TestCase):
                 "starrocks-consumer-flow",
                 "doris-consumer-flow",
                 "clickhouse-consumer-flow",
+                "oracle-consumer-flow",
                 "sql-pool-consumer-flow",
                 "catalog-domain-overview",
                 "enterprise-catalog-publishing",

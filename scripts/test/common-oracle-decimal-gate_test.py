@@ -137,7 +137,7 @@ esac
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("gvenzl/oracle-free:23@sha256:", docker)
         self.assertNotIn("23-slim", docker)
-        self.assertIn("|SpatialDelete)$", go)
+        self.assertIn("|SpatialDelete|GuardedQueryRead)$", go)
         self.assertEqual(env.splitlines(), ["1 45678", "1 45678"])
         self.assertIn("test ./internal/executor -run ^TestIntegrationTransferOracleReplace$ -count=1 -v", go)
         self.assertIn("rm --force --volumes addp-oracle-decimal-disposable", docker)

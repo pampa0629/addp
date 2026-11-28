@@ -2,6 +2,7 @@
 # ADDP_ONLINE_SUITES=starrocks-consumer-flow
 # ADDP_ONLINE_SUITES=doris-consumer-flow
 # ADDP_ONLINE_SUITES=clickhouse-consumer-flow
+# ADDP_ONLINE_SUITES=oracle-consumer-flow
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -11,6 +12,7 @@ case "$ONLINE_SUITE" in
   starrocks-consumer-flow) engine_type=starrocks; HOSTED_FIXTURE_CONTAINERS=() ;;
   doris-consumer-flow) engine_type=doris; HOSTED_FIXTURE_CONTAINERS=(addp-doris-source-online) ;;
   clickhouse-consumer-flow) engine_type=clickhouse; HOSTED_FIXTURE_CONTAINERS=(addp-clickhouse-source-online) ;;
+  oracle-consumer-flow) engine_type=oracle; HOSTED_FIXTURE_CONTAINERS=(addp-oracle-source-online) ;;
   *) exit 2 ;;
 esac
 grants_cleaned=0

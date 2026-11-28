@@ -33,6 +33,7 @@ class ConsumerProfile:
     catalog_tables: tuple[str, ...]
 
 PROFILES = {
+    'oracle': ConsumerProfile('oracle', 'ADDP', 'schema', ('ID','SHAPE'), '', None, 'VARCHAR2(128)', ('CUSTOMER_LOCATIONS','ORDERS')),
     'clickhouse': ConsumerProfile('clickhouse', 'business', 'database', ('id','optional_text'), '', '', 'String', ('source','customers')),
     'doris': ConsumerProfile('doris', 'business', 'database', ('id','optional_text'), '', '', 'CHAR(128)', ('source','customers')),
     'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', 'schema', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT', ('source',)),
@@ -46,7 +47,7 @@ def require(ok,message):
 
 
 def private_directory(profile):
-    if profile.engine_type in ('clickhouse', 'doris'):
+    if profile.engine_type in ('clickhouse', 'doris', 'oracle'):
         return Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR'))
     fixture = import_module('business.scripts.online-gaussdb-consumer-fixture' if profile.engine_type == 'gaussdb' else 'business.starrocks.admission')
     return fixture.directory()
@@ -72,14 +73,14 @@ def prepare(profile, tenant, engine):
     if profile.engine_type == 'gaussdb':
         verify_gaussdb_future_table(preparer, consumer, engine, private, participants, journal)
     REGISTRATION.initialize_exact_record_read_grants(preparer, consumer, tenant,
-        [(engine, profile.namespace_term, profile.namespace, 'source')], scan_preparation=True, on_pending=on_pending)
+        [(engine, profile.namespace_term, profile.namespace, profile.catalog_tables[0])], scan_preparation=True, on_pending=on_pending)
     def on_metadata(rows):
         metadata[:] = rows
         checkpoint()
     grants = REGISTRATION.ExactRecordGrants(preparer, consumer, tenant, action='metadata_read', scan_preparation=True, on_change=on_metadata)
     for name in profile.catalog_tables[1:]:
-        grants.grant(engine, profile.namespace, name, 'table')
-        consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets':[grants.target(engine,profile.namespace,name,'table')]})
+        grants.grant(engine, profile.namespace, name, 'table', namespace_term=profile.namespace_term)
+        consumer.request('POST', '/api/v1/system/engine-access/read-observations/current-source', (403,), {'targets':[grants.target(engine,profile.namespace,name,'table',profile.namespace_term)]})
     (private / 'readonly-sql-scan.json').write_text(json.dumps(scan))
 
 
@@ -378,7 +379,7 @@ def audit_business_selects(before, after):
 
 
 def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
-    if profile.engine_type in ('clickhouse', 'doris'):
+    if profile.engine_type in ('clickhouse', 'doris', 'oracle'):
         def read_audit():
             return subprocess.check_output(
                 ['bash', f'scripts/test/common-{profile.engine_type}-decimal-gate.sh', 'online-audit'], text=True, timeout=30)
@@ -389,23 +390,34 @@ def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
     identity = API.validate_user_identity(client, tenant, PERMISSIONS)
     context = client.request('GET', '/api/v1/system/auth/context', (200,)).payload
     principal_id = str(context['principal']['id'])
-    locator = f'addp://engine/{engine}/path/business/source?type=table'
+    source = profile.catalog_tables[0]
+    locator = f'addp://engine/{engine}/path/{profile.namespace}/{source}?type=table'
+    plain = ANALYTIC_SQL_READ
+    expected_checks = {'authorized', 'ungranted_join'}
+    if profile.engine_type == 'oracle':
+        plain = 'SELECT TO_CHAR(ID) AS "optional_text" FROM ADDP.CUSTOMER_LOCATIONS WHERE ID = 1'
+        join = 'SELECT a.ID FROM ADDP.CUSTOMER_LOCATIONS a JOIN ADDP.ORDERS b ON a.ID=b.CUSTOMER_ID'
+        expected_checks.add('spatial_authorized')
     evidence_path = directory / f'{profile.engine_type}-develop-source-reads.json'
     if revoked:
         evidence = json.loads(evidence_path.read_text())
         require(evidence['engine_id'] == engine and evidence['identity'] == identity and
                 evidence['principal_id'] == principal_id and
-                set(evidence['checks']) == {'authorized', 'ungranted_join'},
+                set(evidence['checks']) == expected_checks,
                 'revocation check requires the original consumer and successful test window')
         cleanup = json.loads((directory / f'{profile.engine_type}-grant-cleanup.json').read_text())
-        target = REGISTRATION.ExactRecordGrants.target(engine, 'business', 'source', 'table')
+        target = REGISTRATION.ExactRecordGrants.target(engine, profile.namespace, source, 'table', profile.namespace_term)
         require(not cleanup['failed_requests'] and any(row['engine'] == engine and
                 row['action'] == 'read' and row['target'] == target for row in cleanup['grants']),
                 'confirmed revocation of the fixture source required')
-        cases = [('revoked', ANALYTIC_SQL_READ, False)]
+        cases = [('revoked', plain, False)]
     else:
         evidence = dict(identity=identity, principal_id=principal_id, engine_id=engine, checks={})
-        cases = [('authorized', ANALYTIC_SQL_READ, True), ('ungranted_join', join, False)]
+        cases = [('authorized', plain, True), ('ungranted_join', join, False)]
+        if profile.engine_type == 'oracle':
+            cases.insert(1, ('spatial_authorized',
+                'SELECT MDSYS.SDO_UTIL.TO_WKTGEOMETRY(MDSYS.SDO_CS.TRANSFORM(SHAPE, 3857)) AS "wkt" '
+                'FROM ADDP.CUSTOMER_LOCATIONS WHERE ID = 1', True))
     checks = evidence['checks']
     try:
         for phase, query, allowed in cases:
@@ -420,6 +432,12 @@ def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
                 ids = after[len(before):].splitlines()
                 require(all(query_id == execution_id for query_id in ids),
                         'ClickHouse source query ID did not match the Develop execution')
+            elif profile.engine_type == 'oracle':
+                previous, current = before.split(), after.split()
+                require(current[:len(previous)] == previous, 'Oracle audit window changed')
+                ids = current[len(previous):]
+                require(all(re.fullmatch(r'[0-9]+:[0-9]+', query_id) for query_id in ids),
+                        'unexpected Oracle audit statement identity')
             else:
                 ids = audit_business_selects(before, after)
             details = result.get('error_details') or {}
@@ -431,8 +449,12 @@ def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
                                  reason=diagnostic.get('reason'))
             if allowed:
                 summary = result.get('metadata', {}).get('result', {}).get('summary', {})
-                require(result.get('status') == 'success' and summary.get('preview_rows') == [{'optional_text': ''}],
-                        'authorized query did not return the fixture row')
+                rows = summary.get('preview_rows')
+                if phase == 'spatial_authorized':
+                    matches = isinstance(rows, list) and len(rows) == 1 and str(rows[0].get('wkt', '')).startswith('POINT (')
+                else:
+                    matches = rows == [{'optional_text': '1' if profile.engine_type == 'oracle' else ''}]
+                require(result.get('status') == 'success' and matches, 'authorized query did not return the fixture row')
                 require(len(ids) == 1, 'expected exactly one source business SELECT')
             else:
                 assert_source_read_denied(result)
@@ -460,14 +482,14 @@ def main():
                     and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'isolated SQL consumer required')
             client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
             directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
-            if profile.engine_type in ('clickhouse', 'starrocks', 'doris'):
+            if profile.engine_type in ('clickhouse', 'starrocks', 'doris', 'oracle'):
                 verify_analytic_reads(profile, client, tenant, engine, directory, revoked=True)
             else:
                 verify_gaussdb_revoked_execution(client, tenant, engine, directory)
         return 0
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
     directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
-    if profile.engine_type in ('clickhouse', 'doris'):
+    if profile.engine_type in ('clickhouse', 'doris', 'oracle'):
         report = verify_analytic_reads(profile, client, tenant, engine, directory, revoked=False)
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
         return 0
