@@ -1,9 +1,18 @@
 --- a/system/backend/cmd/online-test-fixture/main.go
 +++ b/system/backend/cmd/online-test-fixture/main.go
-@@ -369,0 +370,2 @@
+@@ -408,6 +408,8 @@
+         return suitePermissions("raster-workflow")
+     }
+     switch suite {
 +	case "standard-document-storage":
 +		return []string{"standard.document.create", "standard.document.read", "standard.document.update", "standard.document.delete"}, nil
-@@ -724,0 +727,13 @@
+     case executionTraceLocalSuite:
+         return append([]string(nil), executionTraceLocalPermissions...), nil
+     case "execution-events-pagination":
+@@ -797,6 +799,19 @@
+         return err
+     }
+     values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
 +	if *suite == "standard-document-storage" {
 +		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
 +		if err != nil {
@@ -17,6 +26,15 @@
 +		values["ADDP_ONLINE_STANDARD_FOREIGN_TOKEN"] = reader.AccessToken
 +		values["ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID"] = fmt.Sprint(foreignTenant.ID)
 +	}
-@@ -1763,0 +1779,2 @@
+     if registryPlatformToken != "" {
+         values["ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"] = registryPlatformToken
+     }
+@@ -1853,6 +1868,8 @@
+         "ADDP_ONLINE_RETENTION_FOREIGN_TENANT_ID",
+         "ADDP_ONLINE_TEST_APPROVER_ACCESS_TOKEN",
+         "ADDP_ONLINE_TEST_APPROVER_USERNAME",
 +		"ADDP_ONLINE_STANDARD_FOREIGN_TOKEN",
 +		"ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID",
+         "ADDP_ONLINE_TEST_APPROVER_PASSWORD",
+         "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN",
+         "ADDP_ONLINE_TEST_USER_USERNAME",
