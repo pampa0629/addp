@@ -4,7 +4,11 @@ set -euo pipefail
 fail() { echo "Object T4 fixture failed: $*" >&2; exit 1; }
 [ "${GITHUB_ACTIONS:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ] &&
   [ "${ADDP_ONLINE_HOSTED:-}" = 1 ] && [ "${ADDP_ONLINE_HOST:-}" = 1 ] &&
-  [ "${ONLINE_SUITE:-}" = infra-object-storage ] && [ "${POSTGRES_DB:-}" = addp_online ] || fail 'isolated Hosted object suite required'
+  [ "${POSTGRES_DB:-}" = addp_online ] || fail 'isolated Hosted object suite required'
+case "${ONLINE_SUITE:-}" in
+  infra-object-storage|infra-object-csv-export) ;;
+  *) fail 'isolated Hosted object suite required' ;;
+esac
 container=addp-object-online-disposable
 case "${1:-}" in
   stop)
@@ -32,12 +36,25 @@ done
 export OBJECT_SOURCE_PASSWORD
 OBJECT_SOURCE_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
 docker exec -i "$container" psql -X -U postgres -d object_fixture -v ON_ERROR_STOP=1 -v reader_password="$OBJECT_SOURCE_PASSWORD" >/dev/null <<'SQL'
-CREATE EXTENSION postgis;
 CREATE ROLE object_operator LOGIN PASSWORD :'reader_password';
 GRANT CONNECT ON DATABASE object_fixture TO object_operator;
+GRANT USAGE ON SCHEMA public TO object_operator;
+SQL
+if [ "$ONLINE_SUITE" = infra-object-csv-export ]; then
+  docker exec -i "$container" psql -X -U postgres -d object_fixture -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+BEGIN;
+CREATE TABLE public.object_import_points (id integer PRIMARY KEY, label text NOT NULL);
+INSERT INTO public.object_import_points VALUES (1, 'alpha'), (2, 'beta');
+GRANT SELECT ON public.object_import_points TO object_operator;
+COMMIT;
+SQL
+else
+  docker exec -i "$container" psql -X -U postgres -d object_fixture -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE EXTENSION IF NOT EXISTS postgis;
 GRANT USAGE, CREATE ON SCHEMA public TO object_operator;
 -- The real Worker must create the absent target and its creation witness.
 SQL
+fi
 python3 - <<'PY'
 import json, os
 fd = os.open(os.environ['ADDP_ONLINE_FIXTURE_ENGINE_DESCRIPTOR_FILE'], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

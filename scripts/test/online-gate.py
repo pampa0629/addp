@@ -44,6 +44,13 @@ class Suite:
 
 # Only executable owner-maintained Online suites belong here. Do not register
 # placeholders: an entry means the suite is ready for real Online acceptance.
+INFRA_OBJECT_SUITE = Suite(
+    command=(sys.executable, str(Path(__file__).with_name("infra-object-storage-online.py").resolve())),
+    services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL"),
+              ("security", "SECURITY_URL"), ("transfer", "TRANSFER_URL"),
+              ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
+)
+
 SUITES: Mapping[str, Suite] = {
     "execution-events-retention": Suite(
         command=(sys.executable, "-m", "scripts.test.execution-events-retention-online"),
@@ -70,12 +77,8 @@ SUITES: Mapping[str, Suite] = {
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL"),
                   ("security", "SECURITY_URL"), ("service", "SERVICE_URL")),
     ),
-    "infra-object-storage": Suite(
-        command=(sys.executable, str(Path(__file__).with_name("infra-object-storage-online.py").resolve())),
-        services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("meta", "META_URL"),
-                  ("security", "SECURITY_URL"), ("transfer", "TRANSFER_URL"),
-                  ("manager", "MANAGER_URL"), ("develop", "DEVELOP_URL")),
-    ),
+    "infra-object-storage": INFRA_OBJECT_SUITE,
+    "infra-object-csv-export": INFRA_OBJECT_SUITE,
     "standard-document-storage": Suite(
         command=(sys.executable, str(Path(__file__).with_name("standard-document-storage-online.py").resolve())),
         services=(("system", "SYSTEM_URL"), ("gateway", "GATEWAY_URL"), ("standard", "STANDARD_URL")),
@@ -1429,6 +1432,7 @@ def run_online(
         "meta-scan-claim": "meta-scan-product",
         "standard-document-storage": "standard-http-product",
         "infra-object-storage": "infra-object-product",
+        "infra-object-csv-export": "infra-object-product",
         "infra-redis-core": "redis-http-product",
         "develop-notebook-storage": "notebook-http-product",
     }

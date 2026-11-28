@@ -22,6 +22,7 @@ EXECUTION = "11111111-1111-4111-8111-111111111111"
 def session(owner, identity):
     return {"id": identity, "tenant_id": 7, "user_id": 9, "status": "success",
             "transfer_execution_id": EXECUTION, "target_locator": f"addp-infra://object/manager/tenant_7/export/{owner}/x/file.csv?type=object",
+            "target_parent_locator": f"addp-infra://object/manager/tenant_7/export/{owner}/x?type=prefix",
             "execution_request_digest": "a" * 64, "created_at": "2026-11-14T10:00:00Z",
             "updated_at": "2026-11-14T10:01:00Z"}
 
@@ -31,17 +32,17 @@ class ObserverTest(unittest.TestCase):
         item = {"id": 17, "full_name": "public." + scenario.TABLE, "item_type": "table"}
         client = unittest.mock.Mock()
         client.request.return_value = SimpleNamespace(payload=[item])
-        locator, item_id = scenario.read_imported_item_locator(client, 3)
+        locator, item_id = scenario.read_source_item_locator(client, 3)
         self.assertEqual(item_id, 17)
         self.assertEqual(parse_qs(urlsplit(locator).query), {"type": ["table"], "item_id": ["17"]})
         client.request.assert_called_once_with("GET", "/api/v1/meta/engines/3/items?branch=public", (200,), response_type=list)
         for items in ([], [item, item]):
             client.request.return_value = SimpleNamespace(payload=items)
             with self.assertRaises(scenario.api.SuiteError):
-                scenario.read_imported_item_locator(client, 3)
+                scenario.read_source_item_locator(client, 3)
         client.request.return_value = SimpleNamespace(payload=[{key: value for key, value in item.items() if key != "id"}])
         with self.assertRaises(scenario.etl.SUPPORT.SuiteError):
-            scenario.read_imported_item_locator(client, 3)
+            scenario.read_source_item_locator(client, 3)
 
     def test_initial_authorization_waits_only_for_pending_and_binds_execution(self):
         current = {"execution_id": EXECUTION, "task_id": 3, "status": "success",
@@ -76,7 +77,8 @@ class ObserverTest(unittest.TestCase):
         for owner, row in rows.items():
             self.assertIn(f"UPDATE {owner}.export_sessions SET created_at=", sql)
             for condition in (f'id={row["id"]}', "tenant_id=7", "user_id=9", "status='success'",
-                              "transfer_execution_id='" + EXECUTION + "'", "target_locator='", "execution_request_digest='", "updated_at='"):
+                              "transfer_execution_id='" + EXECUTION + "'", "target_locator='", "target_parent_locator='",
+                              "execution_request_digest='", "created_at='", "updated_at='"):
                 self.assertIn(condition, sql)
         self.assertNotIn("DELETE", sql)
         self.assertNotIn("task_executions", sql)
@@ -90,8 +92,9 @@ class ObserverTest(unittest.TestCase):
         before = {"manager": session("manager", 11), "develop": session("develop", 12)}
         after = copy.deepcopy(before)
         after["manager"]["target_locator"] += "-wrong"
-        exports = {owner: {"session_id": row["id"], "execution_id": EXECUTION,
-                           "target_locator": row["target_locator"]} for owner, row in before.items()}
+        exports = {owner: {"session_id": row["id"], "execution_id": EXECUTION, "request_digest": row["execution_request_digest"],
+                           "target_locator": row["target_locator"], "target_parent_locator": row["target_parent_locator"]}
+                   for owner, row in before.items()}
         with patch.object(scenario, "session_row", side_effect=[before["manager"], before["develop"], after["manager"]]), \
              patch.object(scenario, "pg") as database:
             with self.assertRaisesRegex(scenario.api.SuiteError, "non-time"):
@@ -104,6 +107,20 @@ class ObserverTest(unittest.TestCase):
         for data in (b"id,label\n1,changed\n2,beta\n", b"id,label\n1,alpha\n", b"id,label\n1,alpha\n2,beta\n3,beta\n"):
             with self.subTest(data=data), self.assertRaises(scenario.api.SuiteError):
                 scenario.csv_proof(data)
+
+    def test_csv_rejects_duplicate_export_without_submitting_import(self):
+        def export_once(_, module, locator, engine, tenant, principal, evidence):
+            evidence.update(path=f"/{module}/exports/1", execution_id=EXECUTION)
+
+        owner, outsider, foreign = (unittest.mock.Mock() for _ in range(3))
+        with patch.object(scenario, "export_once", side_effect=export_once) as export, \
+             patch.object(scenario, "pg", return_value=[["develop", EXECUTION], ["manager", EXECUTION], ["manager", EXECUTION]]), \
+             patch.object(scenario.etl, "verify_unreadable_source_execution") as reject_import:
+            with self.assertRaisesRegex(scenario.api.SuiteError, "exactly one Transfer export execution"):
+                scenario.verify_exports(owner, outsider, foreign, "source", 5, 7, "9", 8, {}, None)
+        self.assertEqual([call.args[1] for call in export.call_args_list], ["manager", "develop"])
+        reject_import.assert_not_called()
+        owner.request.assert_not_called()
 
     def test_reference_is_engine_independent_and_kind_checked(self):
         self.assertEqual(scenario.key_from_ref("addp-infra://object/manager/tenant_7/export/a%20b.csv?type=object", "object"),
@@ -161,8 +178,24 @@ class ObserverTest(unittest.TestCase):
                  'for target in "${modules[@]}"; do',
                  'bash scripts/dev/start.sh "$target"']
         self.assertEqual([host.index(step) for step in steps], sorted(host.index(step) for step in steps))
-        fixture = (ROOT / "scripts/test/infra-object-source-fixture.sh").read_text()
-        self.assertNotIn("CREATE TABLE", fixture)
+
+    def test_csv_identity_patch_compiles_against_the_fixed_product(self):
+        with tempfile.TemporaryDirectory(prefix="addp-csv-export-identity-test-") as directory:
+            subprocess.run(["git", "clone", "--shared", "--no-checkout", str(ROOT), directory],
+                           capture_output=True, check=True)
+            subprocess.run(["git", "checkout", "--detach", "5db515160aa9e027fc187eaac43465677f70366f"],
+                           cwd=directory, capture_output=True, check=True)
+            patch_file = ROOT / "scripts/test/infra-object-csv-export-identity.patch"
+            subprocess.run(["git", "apply", "--ignore-space-change", str(patch_file)],
+                           cwd=directory, capture_output=True, check=True)
+            path = "system/backend/cmd/online-test-fixture/main.go"
+            changed = subprocess.check_output(["git", "diff", "--name-only"], cwd=directory, text=True).splitlines()
+            self.assertEqual(changed, [path])
+            self.assertEqual(subprocess.check_output(["gofmt", "-l", str(Path(directory) / path)]), b"")
+            result = subprocess.run(["go", "test", "./cmd/online-test-fixture", "-run", "^$"],
+                                    cwd=Path(directory) / "system/backend", env=dict(os.environ, GOWORK="off"),
+                                    capture_output=True, text=True, timeout=300)
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_source_fixture_refuses_non_hosted_execution_before_docker(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/test/infra-object-source-fixture.sh"), "start"],
@@ -175,7 +208,7 @@ class ObserverTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="addp-object-descriptor-") as directory:
             root = Path(directory)
             docker = root / "docker"
-            docker.write_text(f"#!{sys.executable}\n" + '''import sys
+            docker.write_text(f"#!{sys.executable}\n" + '''import os, sys
 args = sys.argv[1:]
 if args[:2] == ['container', 'inspect']:
     sys.exit(1)
@@ -184,13 +217,15 @@ if args[0] == 'run':
 elif args[0] == 'exec' and args[-1] == 'SELECT current_database()':
     print('object_fixture')
 elif args[:2] == ['exec', '-i']:
-    sys.stdin.read()
+    with open(os.environ['CAPTURE_SQL'], 'a') as output:
+        output.write(sys.stdin.read())
 else:
     sys.exit(99)
 ''')
             docker.chmod(0o700)
             descriptor = root / "engine.json"
-            environment = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"],
+            sql = root / "fixture.sql"
+            environment = dict(os.environ, PATH=str(root) + os.pathsep + os.environ["PATH"], CAPTURE_SQL=str(sql),
                                GITHUB_ACTIONS="true", RUNNER_OS="Linux", ADDP_ONLINE_HOSTED="1",
                                ADDP_ONLINE_HOST="1", ONLINE_SUITE="infra-object-storage", POSTGRES_DB="addp_online",
                                POSTGRES_PASSWORD="fixture-only", ADDP_ONLINE_SECRET_DIR=str(root),
@@ -199,6 +234,7 @@ else:
                                     env=environment, capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             record = scenario.etl.REGISTRATION.load_descriptor(descriptor)
+            self.assertNotIn("CREATE TABLE", sql.read_text())
             self.assertEqual(record["engine_type"], "postgresql")
             self.assertTrue(record["description"])
             self.assertEqual(descriptor.stat().st_mode & 0o777, 0o600)
@@ -206,6 +242,16 @@ else:
             descriptor.write_text(json.dumps(record))
             with self.assertRaises(scenario.etl.REGISTRATION.RegistrationError):
                 scenario.etl.REGISTRATION.load_descriptor(descriptor)
+            descriptor.unlink()
+            sql.unlink()
+            environment["ONLINE_SUITE"] = "infra-object-csv-export"
+            result = subprocess.run(["bash", str(ROOT / "scripts/test/infra-object-source-fixture.sh"), "start"],
+                                    env=environment, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            sql_text = sql.read_text()
+            self.assertIn("INSERT INTO public.object_import_points VALUES (1, 'alpha'), (2, 'beta')", sql_text)
+            self.assertIn("GRANT SELECT ON public.object_import_points TO object_operator", sql_text)
+            self.assertNotIn("USAGE, CREATE", sql_text)
 
     def test_original_product_cannot_be_replaced_by_fixture_patch(self):
         patch_text = (ROOT / "scripts/test/infra-object-identity.patch").read_text()
@@ -228,7 +274,7 @@ def verify_barrier_postgres():
                                  "-U", "postgres", "-d", "addp_test"], input=statement, text=True,
                                 capture_output=True, timeout=8)
         if result.returncode:
-            raise RuntimeError("barrier verification SQL failed")
+            raise RuntimeError("barrier verification SQL failed: " + result.stderr.strip())
         return result.stdout.strip()
     try:
         environment = dict(os.environ, POSTGRES_PASSWORD=secrets.token_hex(24))
@@ -239,15 +285,15 @@ def verify_barrier_postgres():
         owned = True
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
-            try:
-                if sql("SELECT current_database()") == "addp_test":
-                    break
-            except RuntimeError:
-                pass
+            # Initdb uses a temporary Unix-socket server before the real listener starts.
+            ready = subprocess.run(["docker", "exec", container, "pg_isready", "-h", "127.0.0.1",
+                                    "-U", "postgres", "-d", "addp_test"], capture_output=True, timeout=8)
+            if ready.returncode == 0 and sql("SELECT current_database()") == "addp_test":
+                break
             time.sleep(.5)
         else:
             raise RuntimeError("owned PG readiness timed out")
-        sql("CREATE EXTENSION postgis; CREATE ROLE object_operator; "
+        sql("CREATE EXTENSION IF NOT EXISTS postgis; CREATE ROLE object_operator; "
             "GRANT USAGE, CREATE ON SCHEMA public TO object_operator;")
         with patch.object(scenario, "SOURCE_CONTAINER", container), patch.object(scenario, "SOURCE_DATABASE", "addp_test"):
             assert scenario.pg(f"SELECT to_json(to_regclass('public.{scenario.TABLE}') IS NULL)", source=True) is True

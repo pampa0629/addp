@@ -1248,7 +1248,8 @@ test-infra-object-barrier-postgres: ## 用独占 PG 验证新建目标的领取�
 
 .PHONY: test-infra-object-online-runner
 test-infra-object-online-runner: ## 验证固定版本对象存储 T4 编排与观察器拒绝条件
-	@bash -n scripts/test/online-hosted-infra-object-gate.sh scripts/test/infra-object-source-fixture.sh
+	@bash -n scripts/test/online-hosted-infra-object-gate.sh
+	@bash -n scripts/test/infra-object-source-fixture.sh
 	@python3 -m unittest scripts/test/infra-object-storage-online_test.py
 
 .PHONY: test-redis-core-online-runner

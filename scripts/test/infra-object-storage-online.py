@@ -11,7 +11,8 @@ import subprocess
 import sys
 import time
 import zipfile
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from datetime import datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -21,6 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 api = import_module("scripts.utils.online-api")
 etl = import_module("scripts.test.transfer-relational-sql-etl-online")
 claims = import_module("scripts.test.meta-scan-claim-online")
+objects = import_module("scripts.test.standard-document-storage-online")
+
+CSV_PERMISSIONS = {
+    "manager.data_item.read", "manager.content.read", "manager.derived_artifact.create",
+    "manager.derived_artifact.read", "meta.catalog.read", "transfer.task.read", "transfer.task.execute",
+    "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create",
+}
 
 PERMISSIONS = {
     "manager.data_item.create", "manager.data_item.read", "manager.content.read",
@@ -71,19 +79,11 @@ def pg(sql, *, write=False, source=False):
 
 
 def object_bytes(key):
-    result = subprocess.run(["docker", "exec", "addp-minio", "mc", "cat", "local/manager/" + key],
-                            capture_output=True, timeout=15)
-    require(result.returncode == 0, "physical object read failed")
-    return result.stdout
+    return objects.object_bytes("manager", key)
 
 
 def list_keys(prefix):
-    result = subprocess.run(["docker", "exec", "addp-minio", "mc", "ls", "--json", "--recursive",
-                             "local/manager/" + prefix], capture_output=True, timeout=15)
-    require(result.returncode == 0, "physical prefix listing failed")
-    rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-    require(all(row.get("status") == "success" for row in rows), "physical listing returned an error")
-    return [row["key"] for row in rows if row.get("type") == "file"]
+    return sorted(row.object_name for row in objects.object_store().list_objects("manager", prefix=prefix, recursive=True))
 
 
 def key_from_ref(locator, kind):
@@ -218,10 +218,10 @@ def wait_initial_authorization(client, execution_id, task_id, report):
     raise api.SuiteError("initial production authorization did not reach issued")
 
 
-def read_imported_item_locator(client, engine):
+def read_source_item_locator(client, engine):
     items = client.request("GET", f"/api/v1/meta/engines/{engine}/items?branch=public", (200,), response_type=list).payload
     matches = [item for item in items if item.get("full_name") == "public." + TABLE and item.get("item_type") == "table"]
-    require(len(matches) == 1, "import must identify one persisted Meta DataItem")
+    require(len(matches) == 1, "source must identify one persisted Meta DataItem")
     item = matches[0]
     return etl.SUPPORT.build_item_locator(engine, item), item["id"]
 
@@ -288,7 +288,7 @@ def import_once(client, engine, tenant, principal, report):
                   meta_scan_execution_id=child_id,
                   terminal=execution_proof(report["execution_id"], tenant, principal, source="transfer", task_id=report["task_id"]))
     wait_initial_authorization(client, report["execution_id"], report["task_id"], report)
-    locator, item_id = read_imported_item_locator(client, engine)
+    locator, item_id = read_source_item_locator(client, engine)
     report.update(target_item_id=item_id, target_locator=locator)
     return locator
 
@@ -301,7 +301,7 @@ def session_row(owner, session_id):
 def csv_proof(data):
     rows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
     require(len(rows) == 2 and {(int(row["id"]), row["label"]) for row in rows}
-            == {(1, "alpha"), (2, "beta")}, "CSV values differ from the actual imported source")
+            == {(1, "alpha"), (2, "beta")}, "CSV values differ from the two fixture source rows")
     return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "rows": 2}
 
 
@@ -331,7 +331,7 @@ def export_once(client, owner, locator, engine, tenant, principal, report):
     require(current["status"] == "success" and current["transfer_execution_id"] == report["execution_id"],
             "export session terminal differs")
     row = session_row(owner, report["session_id"])
-    require(row["tenant_id"] == tenant and str(row["user_id"]) == principal
+    require(row and row["tenant_id"] == tenant and str(row["user_id"]) == principal
             and row["transfer_execution_id"] == report["execution_id"]
             and len(row["execution_request_digest"]) == 64, "export session identity/digest differs")
     key = key_from_ref(row["target_locator"], "object")
@@ -340,7 +340,8 @@ def export_once(client, owner, locator, engine, tenant, principal, report):
             "export object escaped its owner's prefix")
     downloaded = client.request("GET", path + "/file", (200,), raw_response=True).payload
     require(downloaded == object_bytes(key), "Gateway download differs from the actual manager bucket")
-    report.update(path=path, target_locator=row["target_locator"], prefix=prefix, key=key,
+    report.update(path=path, target_locator=row["target_locator"], target_parent_locator=row["target_parent_locator"],
+                  prefix=prefix, key=key,
                   request_digest=row["execution_request_digest"], csv=csv_proof(downloaded),
                   terminal=execution_proof(report["execution_id"], tenant, principal, source=owner))
 
@@ -375,7 +376,9 @@ def age_sql(rows):
             f'user_id={positive(row["user_id"])}', "status='success'",
             "transfer_execution_id=" + quote(uuid(row["transfer_execution_id"])),
             "target_locator=" + quote(row["target_locator"]),
+            "target_parent_locator=" + quote(row["target_parent_locator"]),
             "execution_request_digest=" + quote(row["execution_request_digest"]),
+            "created_at=" + quote(row["created_at"]),
             "updated_at=" + quote(row["updated_at"]),
         ])
         updates.append(f"UPDATE {owner}.export_sessions SET created_at=clock_timestamp()-interval '25 hours', "
@@ -388,26 +391,61 @@ def age_sql(rows):
 def timestamp_fixture(exports, tenant, principal):
     before = {owner: session_row(owner, item["session_id"]) for owner, item in exports.items()}
     for owner, row in before.items():
-        require(row["tenant_id"] == tenant and str(row["user_id"]) == principal
-                and row["transfer_execution_id"] == exports[owner]["execution_id"]
-                and row["target_locator"] == exports[owner]["target_locator"], "timestamp fixture scope changed")
+        item = exports[owner]
+        require(row and row["tenant_id"] == tenant and str(row["user_id"]) == principal
+                and row["transfer_execution_id"] == item["execution_id"]
+                and row["target_locator"] == item["target_locator"] and row["target_parent_locator"] == item["target_parent_locator"]
+                and row["execution_request_digest"] == item["request_digest"], "timestamp fixture scope changed")
     pg(age_sql(before), write=True)
     evidence = {}
     for owner, row in before.items():
         after = session_row(owner, row["id"])
         def stable(value):
             return {key: value for key, value in value.items() if key not in {"created_at", "updated_at"}}
-        require(stable(row) == stable(after), "timestamp fixture changed non-time session facts")
+        require(after and stable(row) == stable(after), "timestamp fixture changed non-time session facts")
+        require(all(datetime.fromisoformat(row[key]) - datetime.fromisoformat(after[key]) > timedelta(hours=24)
+                    for key in ("created_at", "updated_at")), "timestamp fixture did not cross the retention threshold")
         evidence[owner] = {"id": row["id"], "created_at_before": row["created_at"], "updated_at_before": row["updated_at"],
                            "created_at_after": after["created_at"], "updated_at_after": after["updated_at"],
                            "unchanged_fields_sha256": hashlib.sha256(json.dumps(stable(row), sort_keys=True).encode()).hexdigest()}
     return {"mode": "approved_session_timestamp_fixture", "natural_24h_wait": False, "sessions": evidence}
 
 
+def csv_source_rows():
+    return pg(f"SELECT json_agg(json_build_array(id,label) ORDER BY id) FROM public.{TABLE}", source=True)
+
+
+@contextmanager
+def prepare_csv_source(initializer, consumer, engine, tenant, report):
+    report["rows_before"] = csv_source_rows()
+    require(report["rows_before"] == [[1, "alpha"], [2, "beta"]], "isolated source rows differ")
+    report["scan_execution_id"] = uuid(etl.wait_for_scan(
+        initializer, engine, time.monotonic() + 180,
+        targets=[f"addp://engine/{engine}/path/public/{TABLE}?type=table"],
+    ))
+    grants = etl.REGISTRATION.ExactRecordGrants(initializer, consumer, tenant, action="read", scan_preparation=True)
+    try:
+        grant = grants.grant(engine, "public", TABLE, "table", namespace_term="schema")
+        locator, item_id = read_source_item_locator(consumer, engine)
+        report.update(locator=locator, item_id=item_id, grant_id=uuid(grant["request_id"]),
+                      item_fingerprint=grant["item_fingerprint"], boundary_hash=grant["boundary_hash"])
+        yield locator
+    except Exception:
+        try:
+            report["grant_cleanup"] = grants.cleanup()
+        except Exception as error:
+            report["grant_cleanup"] = {"status": "failed", "error_type": type(error).__name__}
+        raise
+    else:
+        report["grant_cleanup"] = grants.cleanup()
+
+
 def main(report):
     root = Path.cwd()
+    suite = os.environ.get("ONLINE_SUITE")
+    csv_only = suite == "infra-object-csv-export"
     require(os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("ADDP_ONLINE_HOSTED") == "1"
-            and os.environ.get("ONLINE_SUITE") == "infra-object-storage" and sys.platform == "linux"
+            and suite in {"infra-object-storage", "infra-object-csv-export"} and sys.platform == "linux"
             and os.environ.get("POSTGRES_DB") == "addp_online"
             and root == Path(os.environ["RUNNER_TEMP"]) / "infra-object-product", "pinned Hosted product required")
     sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -422,17 +460,31 @@ def main(report):
     owner = client("ADDP_ONLINE_TEST_USER_ACCESS_TOKEN")
     outsider = client("ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN")
     foreign = client("ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN")
-    owner_identity = identity(owner, tenant, PERMISSIONS)
+    owner_identity = identity(owner, tenant, CSV_PERMISSIONS if csv_only else PERMISSIONS)
     outsider_identity = identity(outsider, tenant, READER_PERMISSIONS)
     foreign_identity = identity(foreign, foreign_tenant, READER_PERMISSIONS)
     principal = owner_identity["principal_id"]
-    require(principal != outsider_identity["principal_id"], "wrong-user test requires a distinct user")
+    require(len({principal, outsider_identity["principal_id"], foreign_identity["principal_id"]}) == 3,
+            "export identity tests require three distinct users")
     report.update(product_sha=sha, harness_sha=os.environ["GITHUB_SHA"], run_id=os.environ["ADDP_ONLINE_TEST_RUN_ID"],
                   tenant_id=tenant, foreign_tenant_id=foreign_tenant, engine_id=engine, physical_bucket="manager",
+                  objectstore_provider=os.environ["ADDP_INFRA_OBJECTSTORE_PROVIDER"],
                   identities={"owner": owner_identity, "wrong_user": outsider_identity, "foreign": foreign_identity})
-    report["phase"] = "import"
-    imported = report["import"] = {}
-    locator = import_once(owner, engine, tenant, principal, imported)
+    imported = None
+    if csv_only:
+        report["phase"] = "prepare_csv_source"
+        source = prepare_csv_source(client("ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN"), owner, engine, tenant,
+                                    report.setdefault("source", {}))
+    else:
+        report["phase"] = "import"
+        imported = report["import"] = {}
+        source = nullcontext(import_once(owner, engine, tenant, principal, imported))
+    with source as locator:
+        verify_exports(owner, outsider, foreign, locator, engine, tenant, principal, foreign_tenant, report, imported)
+    report.update(result="passed", phase="complete")
+
+
+def verify_exports(owner, outsider, foreign, locator, engine, tenant, principal, foreign_tenant, report, imported):
     report["phase"] = "export"
     exports = report["exports"] = {"manager": {}, "develop": {}}
     for module, evidence in exports.items():
@@ -442,23 +494,33 @@ def main(report):
             reader.request("GET", evidence["path"], (404,))
             reader.request("GET", evidence["path"] + "/file", (404,))
             evidence["identity_denials"][name] = {"status_http": 404, "file_http": 404}
-    report["phase"] = "import_identity_denial"
-    foreign.request("GET", f'/api/v1/transfer/task-definitions/{imported["task_id"]}', (404,))
-    rejected = etl.verify_unreadable_source_execution(outsider, imported["task_id"], 120)
-    physical = pg(f"SELECT json_agg(row_to_json(t) ORDER BY id) FROM public.{TABLE} t", source=True)
-    require(physical == imported["physical_rows"], "rejected execution changed the imported target")
-    imported["denials"] = {"foreign_task_http": 404, "wrong_user_execution_id": rejected,
-                            "target_unchanged": True, "records_read": 0, "records_written": 0}
-    report["phase"] = "invalidate_protection"
-    report["protection"] = invalidate_protection(owner, locator, list(exports.values()))
-    # Independent object sentinels prove that prefix cleanup does not expand to
-    # an owner, tenant or bucket. These are fixtures, not downloadable sessions.
-    sentinels = {f"tenant_{tenant}/export/develop/t4-{uuid4().hex}/sentinel": b"other-owner",
-                 f"tenant_{foreign_tenant}/export/manager/t4-{uuid4().hex}/sentinel": b"other-tenant"}
+    if imported is not None:
+        report["phase"] = "import_identity_denial"
+        foreign.request("GET", f'/api/v1/transfer/task-definitions/{imported["task_id"]}', (404,))
+        rejected = etl.verify_unreadable_source_execution(outsider, imported["task_id"], 120)
+        physical = pg(f"SELECT json_agg(row_to_json(t) ORDER BY id) FROM public.{TABLE} t", source=True)
+        require(physical == imported["physical_rows"], "rejected execution changed the imported target")
+        imported["denials"] = {"foreign_task_http": 404, "wrong_user_execution_id": rejected,
+                               "target_unchanged": True, "records_read": 0, "records_written": 0}
+        report["phase"] = "invalidate_protection"
+        report["protection"] = invalidate_protection(owner, locator, list(exports.values()))
+    else:
+        report["phase"] = "freeze_two_export_sessions"
+        rows = pg(f"""SELECT json_agg(json_build_array(source,execution_id) ORDER BY source)
+                   FROM common.task_executions WHERE tenant_id={tenant} AND triggered_by={positive(int(principal))}
+                   AND module='transfer' AND task_type='sync' AND source IN ('develop','manager')""")
+        require(rows == [[module, exports[module]["execution_id"]] for module in ("develop", "manager")],
+                "each module must submit exactly one Transfer export execution")
+        report["export_submission_count"] = len(rows)
+        for item in exports.values():
+            require(list_keys(item["prefix"]) == [item["key"]], "export prefix must contain exactly its CSV object")
+    # Sibling prefixes represent independent sessions without issuing extra exports.
+    sentinels = {f"tenant_{tenant}/export/{module}/{uuid4()}/sentinel": f"sibling-{module}".encode()
+                 for module in exports}
+    sentinels[f"tenant_{foreign_tenant}/export/manager/{uuid4()}/sentinel"] = b"other-tenant"
     for key, content in sentinels.items():
-        result = subprocess.run(["docker", "exec", "-i", "addp-minio", "mc", "pipe", "local/manager/" + key],
-                                input=content, capture_output=True, timeout=15)
-        require(result.returncode == 0, "sentinel creation failed")
+        objects.put_object("manager", key, content)
+        require(object_bytes(key) == content, "sentinel setup bytes differ")
     report["phase"] = "age_only_two_sessions"
     report["expiry"] = timestamp_fixture(exports, tenant, principal)
     report["phase"] = "wait_original_product_cleanup"
@@ -475,19 +537,25 @@ def main(report):
         owner.request("GET", item["path"] + "/file", (404,))
     for key, content in sentinels.items():
         require(object_bytes(key) == content, "scheduled cleanup crossed its exact prefix")
-    for name, proof in imported["files"].items():
-        require(hashlib.sha256(object_bytes(imported["prefix"] + name)).hexdigest() == proof["sha256"],
-                "export cleanup removed or changed import data")
-    report["expiry"].update(cleanup="passed", exact_prefixes_removed=True, import_preserved=True,
+    report["expiry"].update(cleanup="passed", exact_prefixes_removed=True,
                             sentinels=[{"key": key, "sha256": hashlib.sha256(value).hexdigest()} for key, value in sentinels.items()])
-    report["phase"] = "task_cleanup"
-    owner.request("DELETE", f'/api/v1/transfer/task-definitions/{imported["task_id"]}', (200,))
-    owner.request("GET", f'/api/v1/transfer/task-definitions/{imported["task_id"]}', (404,))
-    report.update(result="passed", phase="complete")
+    if imported is not None:
+        for name, proof in imported["files"].items():
+            require(hashlib.sha256(object_bytes(imported["prefix"] + name)).hexdigest() == proof["sha256"],
+                    "export cleanup removed or changed import data")
+        report["expiry"]["import_preserved"] = True
+        report["phase"] = "task_cleanup"
+        owner.request("DELETE", f'/api/v1/transfer/task-definitions/{imported["task_id"]}', (200,))
+        owner.request("GET", f'/api/v1/transfer/task-definitions/{imported["task_id"]}', (404,))
+    else:
+        report["phase"] = "verify_source_unchanged"
+        report["source"]["rows_after"] = csv_source_rows()
+        require(report["source"]["rows_before"] == report["source"]["rows_after"], "CSV source changed during the acceptance")
+        report["phase"] = "revoke_fixture_source_grant"
 
 
 if __name__ == "__main__":
-    evidence = {"schema_version": "addp.online-suite/v1", "suite": "infra-object-storage",
+    evidence = {"schema_version": "addp.online-suite/v1", "suite": os.environ["ONLINE_SUITE"],
                 "result": "failed", "phase": "startup"}
     try:
         main(evidence)

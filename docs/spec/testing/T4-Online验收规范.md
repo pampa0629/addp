@@ -177,6 +177,16 @@ Cleanup浏览器 `browser_revocation_refresh_pagination_late_response` 须有独
 
 原11项目标、请求读次数／权限、120分钟部署／900秒业务、180秒barrier／90秒租约收敛及其他等待不变；barrier到期失败销毁，不续期重发。退出恢复当次暂停实例并释放barrier，控制状态／body／私有计划不归档。实际Hosted仍须单独确认。
 
+<a id="infra-object-csv-export"></a>
+
+## Manager／Develop CSV 导出对照
+
+在 `Online T4 gates` 选择 `infra-object-csv-export`，用 `pg_source_commit` 固定产品提交。RustFS 成功后，另一个 GitHub Hosted Runner 用同一产品提交运行 MinIO。两轮都由正式部署入口初始化所选对象存储，源表和平台 PostgreSQL 均为本轮独占。
+
+业务源固定两行，准备身份经 Meta 定向扫描和 System 的精确读取授权交给普通用户。普通用户经 Gateway 各提交一次 Manager 和 Develop CSV 导出，Develop 的前置查询执行单列。按两个 `transfer_execution_id` 核对真实 Worker 租约和事件、`manager` 桶内各自的对象键及 Gateway 下载字节。同租户他人、跨租户用户分别核对状态与文件拒绝。
+
+导出成功后仅把这两条已识别会话的创建和更新时间回拨 25 小时，原清理器处理过期会话。归档核对会话和前缀消失，其他前缀哨兵与源数据保留，再经正式入口撤回夹具读取授权并清理独占资源。确定性检查走 `make test-infra-object-online-runner`。
+
 ## Redis R1 固定产品隔离验收
 
 `infra-redis-core` 仅人工 Hosted Linux x86_64，固定产品 `690754af4890f493e5ec3fe560e7a5d12ba60c9d` 与验收检出分离；编排、Owner identity 补丁和观察器不得进入产品服务。详细阶段、35 秒原窗口截止、权限和拒绝谓词见[解耦设计第 4.6 节](../../next/平台数据库与对象存储解耦设计.md#r1-固定版本隔离-http-t4-编排已审核编排实施中未实跑)。

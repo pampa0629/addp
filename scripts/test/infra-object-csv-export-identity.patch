@@ -1,0 +1,81 @@
+--- a/system/backend/cmd/online-test-fixture/main.go
++++ b/system/backend/cmd/online-test-fixture/main.go
+@@ -139,7 +139,7 @@
+             return slices.Clone(sourceInitializerPermissions)
+         }
+         return nil
+-	case "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "clickhouse-consumer-flow":
++	case "infra-object-csv-export", "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "clickhouse-consumer-flow":
+         return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+     case "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
+         return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
+@@ -408,6 +408,12 @@
+         return suitePermissions("raster-workflow")
+     }
+     switch suite {
++	case "infra-object-csv-export":
++		return []string{
++			"manager.data_item.read", "manager.content.read", "manager.derived_artifact.create", "manager.derived_artifact.read",
++			"meta.catalog.read", "transfer.task.read", "transfer.task.execute", "develop.task.read", "develop.task.execute",
++			"develop.data_read.execute", "system.execution_authorization.create",
++		}, nil
+     case executionTraceLocalSuite:
+         return append([]string(nil), executionTraceLocalPermissions...), nil
+     case "execution-events-pagination":
+@@ -534,7 +540,7 @@
+     if suite == "graph-protection" {
+         return true
+     }
+-	if suite == "pg-source-authorization" || suite == "sql-pool-consumer-flow" {
++	if suite == "infra-object-csv-export" || suite == "pg-source-authorization" || suite == "sql-pool-consumer-flow" {
+         return true
+     }
+     if suite == "quality-dynamic-binding" || rasterHostedSourcePreparation(suite) {
+@@ -571,6 +577,10 @@
+     if suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "security-mysql-owner-protection" {
+         config.AccessTokenTTL = 4 * time.Hour
+         config.RefreshTokenFamilyTTL = 4 * time.Hour
++	}
++	if suite == "infra-object-csv-export" {
++		config.AccessTokenTTL = time.Hour
++		config.RefreshTokenFamilyTTL = time.Hour
+     }
+     return config
+ }
+@@ -797,6 +807,27 @@
+         return err
+     }
+     values := consumerEnvironment(*suite, tenant.ID, consumerSession.AccessToken, consumerPassword)
++	if *suite == "infra-object-csv-export" {
++		readerPermissions := []string{"manager.derived_artifact.read", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "transfer.task.read", "transfer.task.execute", "system.execution_authorization.create"}
++		outsider, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			tenant.ID, administrator.PrincipalID, "external-online-csv-outsider", readerPermissions)
++		if err != nil {
++			return err
++		}
++		values["ADDP_ONLINE_FIXTURE_OUTSIDER_ACCESS_TOKEN"] = outsider.AccessToken
++		foreignTenant, err := createOnlineForeignTenant(ctx, tenantService.Create, reserve.PrincipalID, tenant.ID)
++		if err != nil {
++			return err
++		}
++		foreign, _, _, err := createPermissionFixture(ctx, repository, identity, membershipService, roleService, selectionService,
++			foreignTenant.ID, reserve.PrincipalID, "external-online-csv-foreign", readerPermissions)
++		if err != nil {
++			return err
++		}
++		values["ADDP_ONLINE_FOREIGN_USER_ACCESS_TOKEN"] = foreign.AccessToken
++		values["ADDP_ONLINE_EVENTS_FOREIGN_TENANT_ID"] = fmt.Sprint(foreignTenant.ID)
++	}
++
+     if registryPlatformToken != "" {
+         values["ADDP_ONLINE_TEST_PLATFORM_ACCESS_TOKEN"] = registryPlatformToken
+     }
+@@ -1381,7 +1412,7 @@
+     if suite == "orchestrator-execution" && values[orchestratorCaseEnv] == scheduledFileCase && values["ADDP_ONLINE_HOSTED"] != "1" {
+         return errors.New("scheduled file fixture requires disposable GitHub Hosted Linux")
+     }
+-	if (suite == "compose-public-origin" || suite == "oceanbase-consumer-flow" || suite == "tidb-consumer-flow" || rasterHostedSourcePreparation(suite)) && values["ADDP_ONLINE_HOSTED"] != "1" {
++	if (suite == "infra-object-csv-export" || suite == "compose-public-origin" || suite == "oceanbase-consumer-flow" || suite == "tidb-consumer-flow" || rasterHostedSourcePreparation(suite)) && values["ADDP_ONLINE_HOSTED"] != "1" {
+         return fmt.Errorf("%s fixture requires disposable GitHub Hosted Linux", suite)
+     }
+     if !filepath.IsAbs(output) {
