@@ -108,6 +108,41 @@ class ObserverTest(unittest.TestCase):
             with self.subTest(data=data), self.assertRaises(scenario.api.SuiteError):
                 scenario.csv_proof(data)
 
+    def test_csv_grant_uses_the_ordinary_user_read_observation(self):
+        registration = scenario.etl.REGISTRATION
+        target = registration.ExactRecordGrants.target(3, "public", scenario.TABLE, "table", "schema")
+        facts = {"item_fingerprint": "a" * 64, "boundary_hash": "b" * 64}
+        authorizer, consumer = (unittest.mock.Mock() for _ in range(2))
+
+        def authorizer_request(method, route, codes, body):
+            if route.endswith("/revoke"):
+                self.assertEqual((method, codes), ("POST", (200,)))
+                return SimpleNamespace(payload={})
+            self.assertEqual((method, route, codes), ("POST", "/api/v1/system/engines/3/access_grants", (201,)))
+            return SimpleNamespace(payload=body | {"engine_id": "3", "boundary_hash": facts["boundary_hash"],
+                                                   "approval_mode": "independent", "operator_principal_id": "8"})
+
+        item = {"engine_id": 3, "id": 17, "full_name": "public." + scenario.TABLE,
+                "item_type": "table", "fingerprint": facts["item_fingerprint"]}
+        authorizer.request.side_effect = authorizer_request
+        consumer.request.side_effect = [SimpleNamespace(payload=value) for value in
+                                        ({}, {}, {"observed_at": "now"}, item, {}, {})]
+        report = {}
+        with patch.object(scenario, "csv_source_rows", return_value=[[1, "alpha"], [2, "beta"]]), \
+             patch.object(scenario.etl, "wait_for_scan", return_value=EXECUTION), \
+             patch.object(registration, "source_grant_participants", return_value=("8", "9")), \
+             patch.object(registration, "read_exact_record_authorization_facts", return_value=facts):
+            with scenario.prepare_csv_source(authorizer, consumer, 3, 7, report) as locator:
+                self.assertEqual(parse_qs(urlsplit(locator).query)["item_id"], ["17"])
+        item_route = f"/api/v1/meta/items/by-catalog-path?engine_id=3&catalog_path=public.{scenario.TABLE}"
+        source_route = "/api/v1/system/engine-access/read-observations/current-source"
+        self.assertEqual([call.args for call in consumer.request.call_args_list], [
+            ("GET", item_route, (404,)), ("POST", source_route, (403,), {"targets": [target]}),
+            ("POST", source_route, (200,), {"targets": [target]}), ("GET", item_route, (200,)),
+            ("POST", source_route, (403,), {"targets": [target]}), ("GET", item_route, (404,)),
+        ])
+        self.assertEqual(report["grant_cleanup"], {"grant_revoked": True, "content_read_http": 403, "meta_item_http": 404})
+
     def test_csv_rejects_duplicate_export_without_submitting_import(self):
         def export_once(_, module, locator, engine, tenant, principal, evidence):
             evidence.update(path=f"/{module}/exports/1", execution_id=EXECUTION)

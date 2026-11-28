@@ -423,21 +423,38 @@ def prepare_csv_source(initializer, consumer, engine, tenant, report):
         initializer, engine, time.monotonic() + 180,
         targets=[f"addp://engine/{engine}/path/public/{TABLE}?type=table"],
     ))
-    grants = etl.REGISTRATION.ExactRecordGrants(initializer, consumer, tenant, action="read", scan_preparation=True)
+    item_route = f"/api/v1/meta/items/by-catalog-path?engine_id={engine}&catalog_path=public.{TABLE}"
+    grants = etl.TransferScenarioReadGrants(initializer, consumer, tenant, action="read", scan_preparation=True)
+
+    def revoke_source_grant():
+        if not grants.pending:
+            return {"status": "not_issued"}
+        grants.cleanup()
+        consumer.request("GET", item_route, (404,))
+        return {"grant_revoked": True, "content_read_http": 403, "meta_item_http": 404}
+
     try:
+        consumer.request("GET", item_route, (404,))
         grant = grants.grant(engine, "public", TABLE, "table", namespace_term="schema")
-        locator, item_id = read_source_item_locator(consumer, engine)
-        report.update(locator=locator, item_id=item_id, grant_id=uuid(grant["request_id"]),
+        report.update(grant_id=uuid(grant["request_id"]),
                       item_fingerprint=grant["item_fingerprint"], boundary_hash=grant["boundary_hash"])
+        item = consumer.request("GET", item_route, (200,)).payload
+        require(item["engine_id"] == engine and item["full_name"] == "public." + TABLE
+                and item["item_type"] == "table" and item["fingerprint"] == grant["item_fingerprint"],
+                "visible CSV source differs from the exact Grant")
+        locator = etl.SUPPORT.build_item_locator(engine, item)
+        report.update(locator=locator, item_id=positive(item["id"]),
+                      grant_observation={"content_read_before": 403, "content_read_after": 200,
+                                         "meta_item_before": 404, "meta_item_after": 200})
         yield locator
     except Exception:
         try:
-            report["grant_cleanup"] = grants.cleanup()
+            report["grant_cleanup"] = revoke_source_grant()
         except Exception as error:
             report["grant_cleanup"] = {"status": "failed", "error_type": type(error).__name__}
         raise
     else:
-        report["grant_cleanup"] = grants.cleanup()
+        report["grant_cleanup"] = revoke_source_grant()
 
 
 def main(report):
