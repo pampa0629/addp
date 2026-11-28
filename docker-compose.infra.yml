@@ -92,7 +92,7 @@ services:
 
   minio:
     image: addp-minio:RELEASE.2025-10-15T17-29-55Z
-    build:
+    build: &objectstore-client-build
       context: scripts/infra
       dockerfile: Dockerfile.minio
     container_name: addp-minio
@@ -353,6 +353,7 @@ services:
   runtime-log-store-init:
     profiles: [observability-logs]
     image: addp-minio:RELEASE.2025-10-15T17-29-55Z
+    build: *objectstore-client-build
     entrypoint: ["/bin/sh", "/init-runtime-log-store.sh"]
     environment:
       LOKI_S3_ENDPOINT: http://minio:9000
@@ -387,6 +388,7 @@ services:
   trace-store-init:
     profiles: [observability-traces]
     image: addp-minio:RELEASE.2025-10-15T17-29-55Z
+    build: *objectstore-client-build
     entrypoint: [/bin/sh, /init-trace-store.sh]
     environment:
       TEMPO_BUCKET: ${TEMPO_BUCKET:-addp-runtime-traces}

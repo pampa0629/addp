@@ -510,6 +510,7 @@ start_central_traces() {
   local ADDP_INFRA_PORT_SCOPE=all
   addp_infra_resolve_ports || return 1
   TRACE_CONFIG_READY=true
+  build_development_images trace-store-init || return 1
   local ADDP_INFRA_PORT_SCOPE=traces
   compose run --rm --no-deps --entrypoint /bin/alloy alloy validate /trace-deployment/runtime.alloy || return 1
   compose up -d --wait --wait-timeout 120 trace-store-init tempo trace-query alloy || return 1
@@ -539,7 +540,7 @@ start_central_logs() {
   local ADDP_INFRA_PORT_SCOPE=logs
   addp_runtime_log_preflight || return 1
   ADDP_INFRA_PORT_SCOPE=logs addp_infra_resolve_ports || return 1
-  build_development_images runtime-log-observer || return 1
+  build_development_images runtime-log-observer runtime-log-store-init || return 1
   local image images
   images=$(compose config --images loki alloy runtime-log-api runtime-log-observer runtime-log-store-init) || return 1
   while IFS= read -r image; do
