@@ -104,6 +104,12 @@ class NotebookObserverTest(unittest.TestCase):
                 scenario.process_gone(identity)
 
 
+    def test_saved_bytes_are_read_inside_the_owned_session_container(self):
+        with patch.object(scenario.subprocess, "check_output", return_value=b"notebook bytes") as read:
+            identity = {"container": "owned-job", "workspace": "/job/files"}
+            self.assertEqual(scenario.workspace_bytes(identity, "tenant_7/notebooks/notebook.ipynb"), b"notebook bytes")
+        read.assert_called_once_with(["docker", "exec", "owned-job", "cat", "--", "/job/files/notebook.ipynb"], timeout=15)
+
     def test_hosted_registration_pins_product_and_preserves_standard_lifecycle(self):
         root = Path(__file__).resolve().parents[2]
         script = (root / "scripts/test/online-hosted-notebook-storage-gate.sh").read_text()

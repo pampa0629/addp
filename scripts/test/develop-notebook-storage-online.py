@@ -122,6 +122,11 @@ print(json.dumps([processes, cap]))
             "session_id": session_id, "container": containers[0], "network": networks[0]}, capability
 
 
+def workspace_bytes(identity, key):
+    filename = str(Path(identity["workspace"], Path(key).name))
+    return subprocess.check_output(["docker", "exec", identity["container"], "cat", "--", filename], timeout=15)
+
+
 def process_gone(identity):
     key = identity["session_id"]
     if session_resources("container", key) or session_resources("network", key):
@@ -287,7 +292,7 @@ def main():
             proof = kernel_roundtrip(owner, session, Path(key).name)
             identity, capability = process_identity(session["id"])
             require(proof["pid"] in identity["processes"] and proof["cwd"] == identity["workspace"], "Kernel process not in owned workspace")
-            saved = Path(identity["workspace"], Path(key).name).read_bytes()
+            saved = workspace_bytes(identity, key)
             require(b"Notebook storage acceptance" in saved and saved != original, "HTTP edit was not saved")
             observation = {"task_id": task_id, "session_id": session["id"], "locator": locator, "key": key,
                            "initial_physical": initial_physical, "kernel": proof, "session_processes": identity}
@@ -321,7 +326,7 @@ def main():
         ttl_key = unquote(urlsplit(uploaded["content"]["notebook_locator"]).path.removeprefix("/develop/"))
         kernel_roundtrip(owner, expired, Path(ttl_key).name)
         expired_identity, expired_capability = process_identity(expired["id"])
-        ttl_saved = Path(expired_identity["workspace"], Path(ttl_key).name).read_bytes()
+        ttl_saved = workspace_bytes(expired_identity, ttl_key)
         require(ttl_saved != retained[ttl_key], "TTL case did not save a new local edit")
         expired_cookie = owner.cookie_header(ROOT + "/notebook-sessions/" + expired["id"] + "/api/contents")
         expiry = datetime.fromisoformat(expired["expires_at"].replace("Z", "+00:00"))
