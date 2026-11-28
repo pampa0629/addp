@@ -33,7 +33,11 @@ source "$HARNESS/scripts/test/hosted-platform-database.sh"
 export ADDP_INFRA_OBJECTSTORE_PROVIDER="$objectstore_provider"
 export ADDP_INFRA_OBJECTSTORE_BINDINGS=develop=notebook-http-documents
 export JUPYTER_SESSION_TTL_SECONDS=300 JUPYTER_API_PORT=8097
-run_logged bash -c 'source "$1/scripts/dev/jupyter-env.sh"; ensure_jupyter_python_env "$1"' _ "$ROOT_DIR"
+run_logged bash -ec '
+  source "$1/scripts/dev/lifecycle-lock.sh"
+  source "$1/scripts/dev/jupyter-env.sh"
+  ensure_jupyter_python_env "$1"
+' _ "$ROOT_DIR"
 export DEVELOP_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export MANAGER_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 infra_owned=1
