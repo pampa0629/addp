@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common-clickhouse-decimal-gate.sh - Verify ClickHouse typed writes, binary reads and Manager preview on a disposable database.
+# common-clickhouse-decimal-gate.sh - Verify ClickHouse typed writes, guarded reads and Manager preview on a disposable database.
 # ADDP_T2_HOSTED_ONLY=clickhouse
 
 set -euo pipefail
@@ -9,6 +9,60 @@ CONTAINER_NAME=addp-clickhouse-decimal-disposable
 CLICKHOUSE_IMAGE='clickhouse/clickhouse-server:25.12.1.649@sha256:7234d193fbeb3a375f21f0bb99040396f68bb2e82cada4f4947d7fcf9638bbf3'
 DATABASE_NAME=addp_clickhouse_disposable
 DATABASE_PASSWORD='addp_clickhouse_password'
+MODE=${1:-test}
+OWNER=clickhouse-native-test
+case "$MODE" in
+    test) ;;
+    online-start|online-stop|online-audit)
+        [ "${GITHUB_ACTIONS:-}/${RUNNER_OS:-}/${ADDP_ONLINE_HOST:-}/${ONLINE_SUITE_INPUT:-}" = "true/Linux/1/clickhouse-consumer-flow" ] ||
+            { echo "disposable Hosted ClickHouse required" >&2; exit 1; }
+        CONTAINER_NAME=addp-clickhouse-source-online
+        OWNER="clickhouse-consumer-flow:${GITHUB_RUN_ID:?}:${GITHUB_RUN_ATTEMPT:?}"
+        DATABASE_NAME=business
+        ;;
+    *) exit 2 ;;
+esac
+
+check_owned() {
+    [ "$(docker inspect --format '{{index .Config.Labels "com.addp.online-fixture"}}' "$CONTAINER_NAME")" = "$OWNER" ]
+}
+
+if [ "$MODE" = online-stop ]; then
+    if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        check_owned
+        volumes=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "volume"}}{{println .Name}}{{end}}{{end}}' "$CONTAINER_NAME")
+        docker rm -fv "$CONTAINER_NAME" >/dev/null
+        for volume in $volumes; do
+            [ -z "$(docker volume ls -q --filter "name=^$volume$")" ]
+        done
+    fi
+    [ -z "$(docker ps -aq --filter "label=com.addp.online-fixture=$OWNER")" ]
+    echo 'ClickHouse Hosted source cleanup passed'
+    exit 0
+fi
+
+admin_sql() {
+    docker exec -i "$CONTAINER_NAME" sh -c 'exec clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database "$CLICKHOUSE_DB" --multiquery'
+}
+
+if [ "$MODE" = online-audit ]; then
+    check_owned
+    admin_sql <<'SQL'
+SYSTEM FLUSH LOGS;
+SELECT query_id
+FROM system.query_log
+WHERE initial_user = 'business_reader' AND query_kind = 'Select'
+AND ((type = 'QueryStart' AND query IN (
+    'SELECT optional_text FROM business.source WHERE id = 2',
+    'SELECT a.id FROM business.source a JOIN business.customers b ON a.id=b.id'
+)) OR (type IN ('QueryFinish','ExceptionWhileProcessing')
+    AND hasAny(tables, ['business.source','business.customers'])))
+GROUP BY query_id
+ORDER BY min(query_start_time_microseconds), query_id
+FORMAT TSVRaw;
+SQL
+    exit
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/addp-common-clickhouse-decimal.XXXXXX")
 CONTAINER_OWNED=false
 
@@ -17,7 +71,7 @@ cleanup() {
     trap - EXIT
     set +e
     if [ "$CONTAINER_OWNED" = true ] && docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
-        if [ "$status" -ne 0 ]; then
+        if [ "$status" -ne 0 ] && [ "$MODE" = test ]; then
             docker logs "$CONTAINER_NAME" > "$WORK_DIR/clickhouse-container.log" 2>&1
             tail -n 200 "$WORK_DIR/clickhouse-container.log" >&2
         fi
@@ -50,6 +104,7 @@ fi
 CONTAINER_OWNED=true
 docker run --detach \
     --name "$CONTAINER_NAME" \
+    --label "com.addp.online-fixture=$OWNER" \
     --publish 127.0.0.1::9000 \
     --env "CLICKHOUSE_DB=$DATABASE_NAME" \
     --env CLICKHOUSE_USER=default \
@@ -86,6 +141,47 @@ case "$host_port" in
         ;;
 esac
 
+if [ "$MODE" = online-start ]; then
+    reader_password=$(openssl rand -hex 24)
+    if ! admin_sql > /dev/null 2>"$WORK_DIR/seed-error.log" <<SQL
+CREATE TABLE source (id UInt64, optional_text String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE customers (id UInt64, optional_text String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO source VALUES (2, '');
+INSERT INTO customers VALUES (2, 'fixture customer');
+CREATE USER business_reader IDENTIFIED WITH sha256_password BY '$reader_password';
+GRANT SELECT ON business.source TO business_reader;
+GRANT SELECT ON business.customers TO business_reader;
+SQL
+    then
+        sed "s/$reader_password/[redacted]/g" "$WORK_DIR/seed-error.log" >&2
+        exit 1
+    fi
+    umask 077
+    ADDP_CLICKHOUSE_READER_PASSWORD="$reader_password" python3 - "$host_port" "${ADDP_ONLINE_SECRET_DIR:?}/clickhouse-engine.json" <<'PYTHON'
+import json
+import os
+from pathlib import Path
+import sys
+
+port, output = sys.argv[1:]
+descriptor = {
+    "engine_type": "clickhouse", "engine_origin": "general",
+    "name": "ClickHouse isolated source",
+    "description": "ClickHouse Develop source authorization fixture",
+    "connection_info": {
+        "host": "127.0.0.1", "port": int(port), "database": "business",
+        "user": "business_reader", "password": os.environ["ADDP_CLICKHOUSE_READER_PASSWORD"],
+    },
+}
+path = Path(output)
+with path.open("x") as file:
+    json.dump(descriptor, file)
+PYTHON
+    CONTAINER_OWNED=false
+    echo 'ClickHouse Hosted source ready'
+    exit
+fi
+
 export ADDP_CLICKHOUSE_INTEGRATION=1
 export ADDP_TEST_CLICKHOUSE_HOST=127.0.0.1
 export ADDP_TEST_CLICKHOUSE_PORT="$host_port"
@@ -94,7 +190,7 @@ export ADDP_TEST_CLICKHOUSE_USER=default
 export ADDP_TEST_CLICKHOUSE_PASSWORD="$DATABASE_PASSWORD"
 
 go -C "$ROOT_DIR/common" test ./engine/plugins/clickhouse \
-    -run '^TestIntegrationClickHouse(BinaryTableRead|DecimalTableWriteDefinition|TypedJSONWrites)$' \
+    -run '^TestIntegrationClickHouse(BinaryTableRead|DecimalTableWriteDefinition|TypedJSONWrites|GuardedQueryRead)$' \
     -count=1 -v 2>&1 | tee "$WORK_DIR/common-clickhouse-decimal.log"
 
 go -C "$ROOT_DIR/manager/backend" test ./internal/api \
@@ -102,8 +198,9 @@ go -C "$ROOT_DIR/manager/backend" test ./internal/api \
     -count=1 -v 2>&1 | tee "$WORK_DIR/manager-clickhouse-preview.log"
 
 if grep -q -- '--- SKIP:' "$WORK_DIR/common-clickhouse-decimal.log" "$WORK_DIR/manager-clickhouse-preview.log" ||
+    ! grep -q '^--- PASS: TestIntegrationClickHouseGuardedQueryRead ' "$WORK_DIR/common-clickhouse-decimal.log" ||
     ! grep -q '^--- PASS: TestIntegrationClickHouseBinaryTableRead ' "$WORK_DIR/common-clickhouse-decimal.log" ||
     ! grep -q '^--- PASS: TestIntegrationManagerClickHouseBinaryPreview ' "$WORK_DIR/manager-clickhouse-preview.log"; then
-    echo "ClickHouse gate requires the Provider and Manager binary regressions without skips" >&2
+    echo "ClickHouse gate requires the guarded read and Provider/Manager binary regressions without skips" >&2
     exit 1
 fi

@@ -25,6 +25,7 @@ require (
 )
 
 require (
+	github.com/AfterShip/clickhouse-sql-parser v0.5.7 // indirect
 	github.com/FalkorDB/falkordb-go/v2 v2.1.0 // indirect
 	github.com/HuaweiCloudDeveloper/gaussdb-go v1.0.0-rc1 // indirect
 	github.com/antlr/antlr4/runtime/Go/antlr v0.0.0-20210803070921-b358b509191a // indirect

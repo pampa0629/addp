@@ -37,11 +37,12 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
               [ -z "${ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN:-}" ] || exit 1
             [ "${ADDP_TEST_SUITE_FAIL:-0}" != 1 ]
         ''')
-        self.host._write_repository_script('scripts/test/common-doris-decimal-gate.sh', """
-            #!/usr/bin/env bash
-            echo "doris-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
-            [ "${ADDP_TEST_FIXTURE_FAIL:-}" != "$1" ]
-        """)
+        for engine in ('doris', 'clickhouse'):
+            self.host._write_repository_script(f'scripts/test/common-{engine}-decimal-gate.sh', f"""
+                #!/usr/bin/env bash
+                echo "{engine}-fixture:$1" >> "$ADDP_TEST_GATE_TRACE"
+                [ "${{ADDP_TEST_FIXTURE_FAIL:-}}" != "$1" ]
+            """)
         self.host._write_repository_script('scripts/test/readonly-sql-consumer-flow-online.py', """
             import os,sys
             from pathlib import Path
@@ -81,27 +82,28 @@ class HostedStarRocksTest(HIGHGO.HostedHighGoTest):
         self.assertFalse(self.host.secrets.exists())
         self.assertIn('infra_cleanup=zero_residuals',(self.host.artifacts/'summary.txt').read_text())
 
-    def test_doris_reuses_identity_revocation_and_cleanup(self):
-        for failure in ('', 'online-start'):
-            with self.subTest(failure=failure):
-                self.host.trace.unlink(missing_ok=True)
-                result = self.run_gate(ONLINE_SUITE_INPUT='doris-consumer-flow',
-                                       ADDP_TEST_FIXTURE_FAIL=failure)
-                trace = self.host.trace.read_text()
-                self.assertEqual(result.returncode == 0, not failure, result.stderr + result.stdout)
-                self.assertIn('doris-fixture:online-stop', trace)
-                self.assertIn('infra-down', trace)
-                self.assertFalse(self.host.secrets.exists())
-                self.assertNotIn('starrocks-fixture:', trace)
-                if failure:
-                    self.assertNotIn('register:', trace)
-                else:
-                    steps = ['doris-fixture:online-start', '--suite doris-consumer-flow',
-                             'register:doris-engine.json', 'readonly:prepare',
-                             'make:test-online ONLINE_SUITE=doris-consumer-flow',
-                             'readonly:cleanup', 'readonly:verify-revoked', 'doris-fixture:online-stop']
-                    self.assertEqual([trace.index(step) for step in steps],
-                                     sorted(trace.index(step) for step in steps))
+    def test_analytical_fixtures_reuse_identity_revocation_and_cleanup(self):
+        for engine in ('doris', 'clickhouse'):
+            for failure in ('', 'online-start'):
+                with self.subTest(engine=engine, failure=failure):
+                    self.host.trace.unlink(missing_ok=True)
+                    suite = f'{engine}-consumer-flow'
+                    result = self.run_gate(ONLINE_SUITE_INPUT=suite, ADDP_TEST_FIXTURE_FAIL=failure)
+                    trace = self.host.trace.read_text()
+                    self.assertEqual(result.returncode == 0, not failure, result.stderr + result.stdout)
+                    self.assertIn(f'{engine}-fixture:online-stop', trace)
+                    self.assertIn('infra-down', trace)
+                    self.assertFalse(self.host.secrets.exists())
+                    self.assertNotIn('starrocks-fixture:', trace)
+                    if failure:
+                        self.assertNotIn('register:', trace)
+                    else:
+                        steps = [f'{engine}-fixture:online-start', f'--suite {suite}',
+                                 f'register:{engine}-engine.json', 'readonly:prepare',
+                                 f'make:test-online ONLINE_SUITE={suite}',
+                                 'readonly:cleanup', 'readonly:verify-revoked', f'{engine}-fixture:online-stop']
+                        self.assertEqual([trace.index(step) for step in steps],
+                                         sorted(trace.index(step) for step in steps))
 
     def test_failure_at_each_owned_stage_still_cleans_platform_and_fixture(self):
         for flags in ({'ADDP_TEST_FIXTURE_FAIL':'start'},{'ADDP_TEST_FIXTURE_FAIL':'persistence'},{'ADDP_TEST_IDENTITY_FAIL':'1'},

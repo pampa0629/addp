@@ -139,7 +139,7 @@ func suiteSourceInitializerPermissions(suite string) []string {
 			return slices.Clone(sourceInitializerPermissions)
 		}
 		return nil
-	case "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow":
+	case "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "clickhouse-consumer-flow":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	case "raster-aspect-orthogonal-persistence", "raster-hillshade-orthogonal-persistence":
 		return append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
@@ -451,7 +451,7 @@ func suitePermissions(suite string) ([]string, error) {
 	case "sql-pool-consumer-flow":
 		return []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read",
 			"develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}, nil
-	case "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow":
+	case "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "clickhouse-consumer-flow":
 		return []string{"system.engine_catalog.read", "meta.catalog.read", "manager.data_item.read", "manager.content.read", "develop.task.read", "develop.task.execute", "develop.data_read.execute", "system.execution_authorization.create"}, nil
 	case "redis-consumer-flow":
 		return catalogConsumerPermissions, nil
@@ -540,7 +540,7 @@ func needsEngineProvisioner(suite string) bool {
 	if suite == "quality-dynamic-binding" || rasterHostedSourcePreparation(suite) {
 		return true
 	}
-	return suite == "oceanbase-consumer-flow" || suite == "tidb-consumer-flow" || suite == "raster-hillshade-orthogonal-persistence" || suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "doris-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
+	return suite == "oceanbase-consumer-flow" || suite == "tidb-consumer-flow" || suite == "raster-hillshade-orthogonal-persistence" || suite == "raster-aspect-orthogonal-persistence" || suite == "ontology-agent-protection" || suite == "vector-topology-persistence" || suite == "vector-pmtiles-workflow" || suite == "highgo-consumer-flow" || suite == "gaussdb-consumer-flow" || suite == "starrocks-consumer-flow" || suite == "doris-consumer-flow" || suite == "clickhouse-consumer-flow" || suite == "transfer-continuous-events" || suite == "security-plaintext-access" || suite == "hdfs-spark-consumer-flow" || suite == "elasticsearch-consumer-flow" || (suite == "raster-workflow" || suite == "raster-workflow-capacity" || suite == "raster-nibble-capacity" || suite == "raster-slope-orthogonal-persistence" || suite == "raster-sight-orthogonal-persistence") || suite == "redis-consumer-flow" || suite == "ftp-consumer-flow" || suite == "security-mysql-owner-protection" || suite == "transfer-relational-sql-etl" || suite == "manager-internal-artifact-lineage" || suite == "opengauss-consumer-flow" || suite == "kingbase-consumer-flow" || suite == "metric-service-revision-lifecycle" || suite == "orchestrator-execution"
 }
 
 func consumerEnvironment(suite string, tenantID int64, accessToken, password string) map[string]string {
@@ -553,7 +553,7 @@ func consumerEnvironment(suite string, tenantID int64, accessToken, password str
 		"raster-focal-circle-weighted-persistence", "raster-focal-circle-persistence", "raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
-	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity", "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
+	case "vector-topology-persistence", "vector-pmtiles-workflow", "highgo-consumer-flow", "gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "clickhouse-consumer-flow", "pg-source-authorization", "security-plaintext-access", "hdfs-spark-consumer-flow", "elasticsearch-consumer-flow", "raster-workflow", "raster-workflow-capacity", "raster-nibble-capacity", "raster-slope-orthogonal-persistence", "raster-sight-orthogonal-persistence", "redis-consumer-flow", "ftp-consumer-flow", "manager-internal-artifact-lineage", "transfer-relational-sql-etl", "transfer-continuous-events", "security-mysql-owner-protection":
 		values["ADDP_ONLINE_TEST_USER_USERNAME"] = "external-online-consumer"
 		values["ADDP_ONLINE_TEST_USER_PASSWORD"] = password
 	}

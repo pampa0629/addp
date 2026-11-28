@@ -20,7 +20,7 @@ func TestSupportsReadOnlySQLExecution(t *testing.T) {
 		{engineType: "oracle", want: true},
 		{engineType: "doris", want: true},
 		{engineType: "tidb", want: true},
-		{engineType: "clickhouse", want: false},
+		{engineType: "clickhouse", want: true},
 		{engineType: "spark", want: false},
 		{engineType: "mongodb", want: false},
 	}

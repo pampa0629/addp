@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ADDP_ONLINE_SUITES=starrocks-consumer-flow
 # ADDP_ONLINE_SUITES=doris-consumer-flow
+# ADDP_ONLINE_SUITES=clickhouse-consumer-flow
 # ADDP_ONLINE_RUNNER=github-hosted-linux-x86_64
 set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
@@ -9,6 +10,7 @@ ONLINE_SUITE=${ONLINE_SUITE_INPUT:?}
 case "$ONLINE_SUITE" in
   starrocks-consumer-flow) engine_type=starrocks; HOSTED_FIXTURE_CONTAINERS=() ;;
   doris-consumer-flow) engine_type=doris; HOSTED_FIXTURE_CONTAINERS=(addp-doris-source-online) ;;
+  clickhouse-consumer-flow) engine_type=clickhouse; HOSTED_FIXTURE_CONTAINERS=(addp-clickhouse-source-online) ;;
   *) exit 2 ;;
 esac
 grants_cleaned=0
@@ -19,8 +21,8 @@ before_online_application_stop() {
   fi
 }
 stop_online_fixture() {
-  if [ "$engine_type" = doris ]; then
-    run_logged bash scripts/test/common-doris-decimal-gate.sh online-stop || return 1
+  if [ "$engine_type" != starrocks ]; then
+    run_logged bash "scripts/test/common-$engine_type-decimal-gate.sh" online-stop || return 1
     return 0
   fi
   run_logged python3 business/starrocks/admission.py stop
@@ -37,8 +39,8 @@ export SECURITY_URL=http://127.0.0.1:8194
 infra_owned=1
 hosted_start_platform_infra
 fixture_owned=1
-if [ "$engine_type" = doris ]; then
-  run_logged bash scripts/test/common-doris-decimal-gate.sh online-start
+if [ "$engine_type" != starrocks ]; then
+  run_logged bash "scripts/test/common-$engine_type-decimal-gate.sh" online-start
 else
   run_logged python3 business/starrocks/admission.py start
   run_logged python3 business/starrocks/admission.py persistence

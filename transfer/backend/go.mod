@@ -25,6 +25,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/AfterShip/clickhouse-sql-parser v0.5.7 // indirect
 	github.com/ClickHouse/ch-go v0.69.0 // indirect
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0 // indirect
 	github.com/FalkorDB/falkordb-go/v2 v2.1.0 // indirect

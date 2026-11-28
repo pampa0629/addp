@@ -138,7 +138,7 @@ func (p *ClickHousePlugin) GenerateSampleQuery(ctx context.Context, connInfo plu
 }
 
 func (p *ClickHousePlugin) PrepareQuery(_ context.Context, connInfo plugin.ConnectionInfo, req plugin.QueryRequest) (plugin.PreparedQuery, error) {
-	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, nil, nil)
+	return plugin.PrepareSQLRuntimeQuery(p, connInfo, req, p.resolveQueryReadSet, nil)
 }
 
 func (p *ClickHousePlugin) SQLDialect() string {
@@ -150,6 +150,9 @@ func (p *ClickHousePlugin) SupportsParameterizedQueries() bool {
 }
 
 func (p *ClickHousePlugin) ExecuteSQL(ctx context.Context, connInfo plugin.ConnectionInfo, sql string, opts plugin.QueryOptions) (*plugin.QueryResult, error) {
+	if opts.ReadOnly {
+		return nil, plugin.ErrQueryReadSetUnresolved
+	}
 	return plugin.ExecuteSQLWithConnectionPool(ctx, p, connInfo, sql, opts, plugin.SQLResultFieldMapper(clickhouseCommonFieldType))
 }
 

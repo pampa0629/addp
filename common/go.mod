@@ -87,6 +87,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/AfterShip/clickhouse-sql-parser v0.5.7
 	github.com/ClickHouse/ch-go v0.69.0 // indirect
 	github.com/HuaweiCloudDeveloper/gaussdb-go v1.0.0-rc1
 	github.com/andybalholm/brotli v1.2.0 // indirect

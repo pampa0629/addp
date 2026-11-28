@@ -29,7 +29,10 @@ require (
 	gorm.io/gorm v1.31.2
 )
 
-require github.com/linkedin/goavro/v2 v2.15.0 // indirect
+require (
+	github.com/AfterShip/clickhouse-sql-parser v0.5.7 // indirect
+	github.com/linkedin/goavro/v2 v2.15.0 // indirect
+)
 
 replace github.com/addp/common => ../../common
 

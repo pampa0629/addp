@@ -33,6 +33,7 @@ class ConsumerProfile:
     catalog_tables: tuple[str, ...]
 
 PROFILES = {
+    'clickhouse': ConsumerProfile('clickhouse', 'business', 'database', ('id','optional_text'), '', '', 'String', ('source','customers')),
     'doris': ConsumerProfile('doris', 'business', 'database', ('id','optional_text'), '', '', 'CHAR(128)', ('source','customers')),
     'gaussdb': ConsumerProfile('gaussdb', 'addp_acceptance', 'schema', ('id','name','amount','optional_text'), '高斯正式接入中文', None, 'TEXT', ('source',)),
     'starrocks': ConsumerProfile('starrocks', 'business', 'database', ('name','id','amount','optional_text'), '正式接入中文', '', 'CHAR(128)', ('source','customers','products','orders')),
@@ -45,7 +46,7 @@ def require(ok,message):
 
 
 def private_directory(profile):
-    if profile.engine_type == 'doris':
+    if profile.engine_type in ('clickhouse', 'doris'):
         return Path(SUPPORT.required_environment('ADDP_ONLINE_SECRET_DIR'))
     fixture = import_module('business.scripts.online-gaussdb-consumer-fixture' if profile.engine_type == 'gaussdb' else 'business.starrocks.admission')
     return fixture.directory()
@@ -377,10 +378,10 @@ def audit_business_selects(before, after):
 
 
 def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
-    if profile.engine_type == 'doris':
+    if profile.engine_type in ('clickhouse', 'doris'):
         def read_audit():
             return subprocess.check_output(
-                ['bash', 'scripts/test/common-doris-decimal-gate.sh', 'online-audit'], text=True, timeout=30)
+                ['bash', f'scripts/test/common-{profile.engine_type}-decimal-gate.sh', 'online-audit'], text=True, timeout=30)
         join = "SELECT a.id FROM business.source a JOIN business.customers b ON a.id=b.id"
     else:
         read_audit = import_module('business.starrocks.admission').read_business_audit
@@ -414,7 +415,13 @@ def verify_analytic_reads(profile, client, tenant, engine, directory, revoked):
             require(execution_id not in {check['execution_id'] for check in checks.values()},
                     'expected a new Develop execution ID')
             after = read_audit()
-            ids = audit_business_selects(before, after)
+            if profile.engine_type == 'clickhouse':
+                require(after.startswith(before), 'ClickHouse audit window changed')
+                ids = after[len(before):].splitlines()
+                require(all(query_id == execution_id for query_id in ids),
+                        'ClickHouse source query ID did not match the Develop execution')
+            else:
+                ids = audit_business_selects(before, after)
             details = result.get('error_details') or {}
             diagnostic = details.get('diagnostic') or {}
             checks[phase] = dict(execution_id=execution_id, status=result.get('status'),
@@ -453,14 +460,14 @@ def main():
                     and not os.environ.get('ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'), 'isolated SQL consumer required')
             client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
             directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
-            if profile.engine_type in ('starrocks', 'doris'):
+            if profile.engine_type in ('clickhouse', 'starrocks', 'doris'):
                 verify_analytic_reads(profile, client, tenant, engine, directory, revoked=True)
             else:
                 verify_gaussdb_revoked_execution(client, tenant, engine, directory)
         return 0
     client=SUPPORT.GatewayClient(SUPPORT.required_environment('GATEWAY_URL'),SUPPORT.required_environment('ADDP_ONLINE_TEST_USER_ACCESS_TOKEN'),30)
     directory = Path(SUPPORT.required_environment('ADDP_ONLINE_ARTIFACT_DIR'))
-    if profile.engine_type == 'doris':
+    if profile.engine_type in ('clickhouse', 'doris'):
         report = verify_analytic_reads(profile, client, tenant, engine, directory, revoked=False)
         print(json.dumps(report, ensure_ascii=False, sort_keys=True))
         return 0

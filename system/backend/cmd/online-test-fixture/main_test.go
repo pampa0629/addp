@@ -1695,7 +1695,7 @@ func TestStarRocksReadOnlyConsumerFixture(t *testing.T) {
 
 func TestReadOnlySQLPreparationOwnsOnlyExistingScanQualifications(t *testing.T) {
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
-	for _, suite := range []string{"gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow"} {
+	for _, suite := range []string{"gaussdb-consumer-flow", "starrocks-consumer-flow", "doris-consumer-flow", "clickhouse-consumer-flow"} {
 		if !slices.Equal(suiteSourceInitializerPermissions(suite), want) {
 			t.Fatalf("%s requires independent exact scan preparation", suite)
 		}
