@@ -107,12 +107,19 @@ def invalid_diagnostic(repository, env, identifier, problem, language, timeout):
 
 
 def run_scenario(repository, env, client, physical_runner=fixture_call, diagnostic_runner=invalid_diagnostic):
-    started = time.monotonic(); budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
+    started = float(env['ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED'])
+    budget = float(env.get('ADDP_ONLINE_TEST_TIMEOUT_SECONDS', '600'))
     if not math.isfinite(budget) or budget != 600: raise SuiteError('statistics business budget must be exactly 600 seconds')
+    if not 0 < started <= time.monotonic():
+        raise SuiteError('statistics business start must bind source preparation')
+    deadline = started + budget
+
     def remaining():
-        value = budget-(time.monotonic()-started)
+        value = deadline - time.monotonic()
         if value <= 0: raise SuiteError('statistics business budget exhausted')
         return value
+
+    remaining()
     client = BudgetClient(client, remaining)
     directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(parents=True, exist_ok=True)
     responses = directory/'statistics-responses'; responses.mkdir(exist_ok=False)

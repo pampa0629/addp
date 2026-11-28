@@ -49,12 +49,29 @@ STATISTICS_PERCENTILES_ROOT=$(cat "$ADDP_ONLINE_SECRET_DIR/statistics-percentile
 application_owned=1
 hosted_start_native_modules -security -develop -manager -monitor
 start_online_geopython_runtime "$RUNTIME_TAG" --mount "type=bind,source=$STATISTICS_PERCENTILES_ROOT,target=$STATISTICS_PERCENTILES_ROOT"
-run_logged python3 business/scripts/online-raster-statistics-percentiles-fixture.py seed
+export ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED
+ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED=$(python3 -c 'import time; print(time.monotonic())')
+run_business() {
+  local remaining
+  remaining=$(python3 - <<'CLOCK'
+import os
+import time
+
+started = float(os.environ['ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED'])
+remaining = 600 - (time.monotonic() - started)
+if remaining <= 0:
+    raise SystemExit('statistics business budget exhausted')
+print(remaining)
+CLOCK
+  )
+  run_logged timeout --kill-after=5 "$remaining" "$@"
+}
+run_business python3 business/scripts/online-raster-statistics-percentiles-fixture.py seed
 # Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_logged bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+run_business bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
-run_logged python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/statistics-percentiles-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
+run_business python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/statistics-percentiles-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"
 export ADDP_ONLINE_STATISTICS_PERCENTILES_NFS_ENGINE_ID="$ADDP_ONLINE_CONSUMER_ENGINE_ID"
 unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN
-run_logged env -u POSTGRES_PASSWORD make test-online "ONLINE_SUITE=$ONLINE_SUITE"
+run_business env -u POSTGRES_PASSWORD make test-online "ONLINE_SUITE=$ONLINE_SUITE"

@@ -5,6 +5,7 @@ import json
 import math
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -136,6 +137,7 @@ class StatisticsPercentilesWorkflowTest(unittest.TestCase):
         self.root = Path(self.work.name)
         self.env = {'ADDP_ONLINE_TEST_TENANT_ID': '2', 'ADDP_ONLINE_STATISTICS_PERCENTILES_NFS_ENGINE_ID': '3',
                     'ADDP_ONLINE_TEST_TIMEOUT_SECONDS': '600', 'ADDP_ONLINE_TEST_RUN_ID': 'statistics-percentiles-123-1',
+                    'ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED': str(time.monotonic()),
                     'ADDP_ONLINE_ARTIFACT_DIR': str(self.root/'evidence')}
 
     def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic):
@@ -210,8 +212,26 @@ class StatisticsPercentilesWorkflowTest(unittest.TestCase):
             self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS']=value
             with self.subTest(value=value),self.assertRaises(m.SuiteError):self.run_case()
         self.env['ADDP_ONLINE_TEST_TIMEOUT_SECONDS']='600'
-        with patch.object(m.time,'monotonic',side_effect=[0.,0.,601.,602.]):
-            with self.assertRaises(m.SuiteError):self.run_case()
+        self.env['ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED'] = '1000'
+        client = Client()
+        with patch.object(m.time, 'monotonic', return_value=1601.0):
+            with self.assertRaisesRegex(m.SuiteError, 'business budget exhausted'):
+                self.run_case(client)
+        self.assertFalse(client.calls)
+        self.assertFalse((self.root / 'evidence').exists())
+
+    def test_preparation_consumes_the_same_business_budget(self):
+        self.env['ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED'] = '1000'
+        timeouts = []
+
+        def worker(repository, env, action, timeout):
+            timeouts.append(timeout)
+            return physical(repository, env, action, timeout)
+
+        with patch.object(m.time, 'monotonic', return_value=1075.0):
+            report = self.run_case(worker=worker)
+        self.assertEqual(timeouts[0], 525)
+        self.assertEqual(report['elapsed_ms'], 75000)
 
     def test_original_response_is_not_reconstructed_or_silently_repaired(self):
         value={'size':1};response=SimpleNamespace(status=200,payload=value,raw=b'{ "size": 1 }')

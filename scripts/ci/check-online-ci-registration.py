@@ -6878,6 +6878,7 @@ STATISTICS_PERCENTILES_REQUIRED = {
     'scripts/test/online-hosted-raster-statistics-percentiles-gate.sh': (
         'start_online_geopython_runtime', '--mount', '--suite raster-workflow',
         '--wait-protection-owners develop,manager', 'ADDP_ONLINE_TEST_TIMEOUT_SECONDS=600',
+        'ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED', 'timeout --kill-after=5',
         'online-raster-statistics-percentiles-fixture.py stop', 'unset ADDP_ONLINE_FIXTURE_ENGINE_ACCESS_TOKEN'),
     'business/scripts/online-raster-statistics-percentiles-fixture.py': (
         'NFSExport', 'owned_root', 'source_fixture.expected_population', 'source_fixture.expected_result',
@@ -6888,7 +6889,8 @@ STATISTICS_PERCENTILES_REQUIRED = {
     'scripts/test/raster-statistics-percentiles-workflow-online.py': ('base.check_workflow_execution_inventory', 'base.reject_workflow_parameter',
         'raster.validate_identity', 'raster.EDITOR_PERMISSIONS', 'raster.transient_result',
         'readonly.no_publication', 'readonly.graph',
-        'BudgetClient', 'budget != 600', 'physical_runner(repository, env, \'oracle\', remaining())',
+        'BudgetClient', 'budget != 600', 'ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED',
+        'physical_runner(repository, env, \'oracle\', remaining())',
         'physical_runner(repository, env, \'verify\', remaining())',
         'current_execution', 'SubmittedLanguageClient', 'invalid_diagnostic',
         'query language rewrote stored failure', 'previous execution result changed',

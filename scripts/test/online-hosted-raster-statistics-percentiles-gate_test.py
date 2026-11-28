@@ -10,6 +10,16 @@ class HostedStatisticsPercentilesGateTest(base.HostedContourGateTest):
         super().setUp()
         docker = self.host.bin / 'docker'
         docker.write_text(docker.read_text().replace('raster-statistics-percentiles-persistence', 'raster-statistics-percentiles-workflow'))
+        self.host._executable('timeout', '''
+            #!/usr/bin/env python3
+            import os, sys, time
+            assert sys.argv[1] == '--kill-after=5'
+            started = float(os.environ['ADDP_ONLINE_STATISTICS_PERCENTILES_STARTED'])
+            assert 0 < float(sys.argv[2]) <= 600 and 0 < started <= time.monotonic()
+            with open(os.environ['ADDP_TEST_GATE_TRACE'], 'a') as stream:
+                stream.write(f'business-clock:{started}\\n')
+            os.execvp(sys.argv[3], sys.argv[3:])
+        ''')
 
     def run_gate(self, check=False, **overrides):
         overrides.setdefault('ONLINE_SUITE_INPUT', 'raster-statistics-percentiles-workflow')
@@ -23,4 +33,8 @@ class HostedStatisticsPercentilesGateTest(base.HostedContourGateTest):
                      'make:test-online ONLINE_SUITE=raster-statistics-percentiles-workflow', 'statistics-percentiles:stop', 'infra-down'):
             self.assertIn(step, trace)
         self.assertNotIn('make:test-online ONLINE_SUITE=raster-statistics-percentiles-persistence', trace)
+        clocks = [line for line in trace.splitlines() if line.startswith('business-clock:')]
+        self.assertEqual(len(clocks), 4)
+        self.assertEqual(len(set(clocks)), 1)
+        self.assertLess(trace.index(clocks[0]), trace.index('statistics-percentiles:seed'))
         self.assertFalse(self.host.secrets.exists())
