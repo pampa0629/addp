@@ -10,6 +10,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 m = importlib.import_module('scripts.test.raster-focal-percentiles-persistence-online')
+preparation = importlib.import_module('scripts.test.raster-focal-circle-weighted-persistence-online_test')
 
 def artifact(name):
     spec=m.fixture.artifact_expectation(name)
@@ -122,7 +123,39 @@ class NewHostedWorkflowTest(unittest.TestCase):
                   'ADDP_ONLINE_TEST_TIMEOUT_SECONDS':'600','ADDP_ONLINE_TEST_RUN_ID':'raster-focal-percentiles-123-1','ADDP_ONLINE_ARTIFACT_DIR':str(self.root/'evidence'),
                   'ADDP_ONLINE_FOCAL_PERCENTILES_STARTED':str(time.monotonic())}
         self.relations=[]
-    def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic):
+
+    def test_source_preparation_requires_a_separate_user(self):
+        with self.assertRaisesRegex(m.SuiteError, 'requires its separate source preparation User'):
+            m.hillshade.source_scan_client(self.env, Client(), {'principal_id': '33'}, lambda: 500)
+
+    def test_real_prepared_metadata_rejects_unowned_or_unconfirmed_targets(self):
+        metadata = object.__new__(m.PreparedMetadata)
+        metadata.engine = 3
+        metadata.bindings, metadata.issued, metadata.items = {}, {}, {}
+        name = 'outputs/int64-unlocated.cog.tif'
+        binding = {'execution': str(uuid.UUID(int=1)), 'scan': str(uuid.UUID(int=2)),
+                   'locator': f'addp://engine/3/path/{name}?type=file'}
+        target = {'engine_id': 3, 'path': name}
+        facts = {'boundary': {'layout': 'multi'}, 'boundary_hash': 'b'*64, 'item_fingerprint': 'a'*64}
+        item = {'id': 17, 'full_name': name, 'fingerprint': 'a'*64,
+                'attributes': {'item': {'format': 'tiff'}}}
+        metadata.grants = SimpleNamespace(metadata_facts=lambda *args, **kwargs: facts,
+                                         target=lambda *args, **kwargs: target)
+        metadata.observer = SimpleNamespace(inspect=lambda: {})
+        metadata.client = SimpleNamespace(request=lambda *args, **kwargs: SimpleNamespace(
+            payload={'observed_at': '2026-11-28T00:00:00Z',
+                     'targets': [{'target': target, 'visible': True}]}))
+        with (patch.object(metadata, 'boundary'), patch.object(metadata, 'container_user'),
+              patch.object(m.support, 'find_fixture_item', return_value=item)):
+            self.assertEqual(metadata.find(name, binding=binding), item)
+            with self.assertRaisesRegex(m.SuiteError, 'wrong current viewshed execution or automatic scan binding'):
+                metadata.find('outputs/unowned.cog.tif', binding=binding)
+            with self.assertRaisesRegex(m.SuiteError, 'wrong current viewshed execution or automatic scan binding'):
+                metadata.find(name, binding={**binding, 'scan': 'foreign'})
+            with self.assertRaisesRegex(m.SuiteError, 'unconfirmed viewshed target'):
+                metadata.find('outputs/square3.cog.tif')
+
+    def run_case(self, client=None, worker=physical, diagnostic_runner=diagnostic, *, cleanup_failure=False):
         client=client or Client()
         def reader(env, identifier, tenant, principal, dag):
             assert tenant==2 and principal==33 and identifier in client.executions
@@ -140,8 +173,20 @@ class NewHostedWorkflowTest(unittest.TestCase):
                 raise m.SuiteError('entry rejection changed the current Develop execution inventory')
         def relation(client, source, target, execution, timeout):
             self.relations.append((source,target,execution));return {'source':source,'target':target,'execution_id':execution}
-        with patch.object(m.raster,'wait_lineage',side_effect=relation):
-            return m.run_scenario(self.root,self.env,client,worker,diagnostic_runner,reader,
+        initializer = preparation.SourceInitializer(m.fixture.SOURCES)
+        self.preparation_events = []
+        metadata = preparation.prepared_metadata_factory(m, client, self.preparation_events,
+                                                         cleanup_failure=cleanup_failure)
+        env = {**self.env, 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN': 'preparer-only'}
+
+        def isolated_worker(repository, worker_env, action, names, timeout):
+            self.assertNotIn('ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN', worker_env)
+            return worker(repository, worker_env, action, names, timeout)
+
+        with (patch.object(m.raster, 'wait_lineage', side_effect=relation),
+              patch.object(m.hillshade, 'source_scan_client', return_value=(initializer, {'principal_id': '44'})),
+              patch.object(m, 'PreparedMetadata', metadata)):
+            return m.run_scenario(self.root, env, client, isolated_worker, diagnostic_runner, reader,
                                   failed_reader=failed_reader,inventory_reader=inventory_reader)
     def test_full_matrix_16_success_56_failures_1032_checks_and_cleanup(self):
         client=Client();calls=[]
@@ -151,6 +196,10 @@ class NewHostedWorkflowTest(unittest.TestCase):
         self.assertEqual(sum(len(names) for action,names in calls if action=='verify'),1032)
         self.assertEqual(len(self.relations),16);self.assertTrue(report['oracle_cache_removed'])
         self.assertEqual(report['source_scan_identity']['parent_execution_id'],None)
+        self.assertEqual(report['source_scan_identity']['triggered_by'], 44)
+        self.assertEqual(report['source_preparation_identity']['principal_id'], '44')
+        self.assertNotIn('source-scan', client.scans)
+        self.assertEqual(self.preparation_events[-1], ('cleanup', None))
         self.assertTrue(all(c['scan_identity']['parent_execution_id']==c['execution_id'] for c in report['cases']))
         entry = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'develop_entry']
         node = [failure for failure in report['failed_parameters'] if failure['rejection_stage'] == 'analysis_node']
@@ -234,7 +283,8 @@ class NewHostedWorkflowTest(unittest.TestCase):
 
         with patch.object(m.time, 'monotonic', return_value=1075.0):
             report = self.run_case(worker=worker)
-        self.assertEqual(remaining[0], 525)
+        self.assertEqual(remaining[0], 525 - m.CLEANUP_RESERVE_SECONDS)
+        self.assertEqual(remaining[-1], 524)
         self.assertEqual(report['elapsed_ms'], 75000)
 
     def test_expired_preparation_never_submits_a_workflow(self):
@@ -246,6 +296,18 @@ class NewHostedWorkflowTest(unittest.TestCase):
         self.assertFalse(client.executions)
         self.assertFalse(client.scans)
         self.assertFalse((self.root / 'evidence').exists())
+
+    def test_revocation_failure_still_cleans_oracle_and_invalidates_success(self):
+        actions = []
+
+        def worker(repository, env, action, names, timeout):
+            actions.append(action)
+            return physical(repository, env, action, names, timeout)
+
+        with self.assertRaisesRegex(m.SuiteError, 'metadata Grant cleanup also failed'):
+            self.run_case(worker=worker, cleanup_failure=True)
+        self.assertEqual(self.preparation_events[-1], ('cleanup', None))
+        self.assertEqual(actions[-1], 'cleanup-oracle')
 
     def test_exact_failure_stage_language_scan_lineage_and_budget_are_enforced(self):
         for fault in ('diagnostic','query','scan','edge','identity','parent','budget','cleanup'):

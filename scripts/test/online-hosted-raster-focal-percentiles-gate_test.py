@@ -50,6 +50,8 @@ class HostedApprovedHostedGateTest(base.HostedContourGateTest):
         trace = self.host.trace.read_text().splitlines()
         limits, = [line for line in trace if line.startswith('runtime-limits:')]
         self.assertIn(' --cpus 4 --memory 2g --memory-swap 2g ', limits)
+        identity, = [line for line in trace if line.startswith('identity:')]
+        self.assertIn(' --suite raster-focal-percentiles-persistence --wait-protection-owners develop,manager ', identity)
         clocks = [line for line in trace if line.startswith('business-clock:')]
         self.assertEqual(len(clocks), 5)
         self.assertEqual(len(set(clocks)), 1)

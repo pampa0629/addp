@@ -2231,7 +2231,8 @@ func TestRasterHostedSourcePreparationKeepsConsumerTwelveAndSeparateThirteen(t *
 	want := append(slices.Clone(sourceInitializerPermissions), "meta.scan_task.execute", "meta.scan_task.read")
 	env := []string{"GITHUB_ACTIONS=true", "RUNNER_OS=Linux"}
 	for _, suite := range []string{"raster-focal-circle-weighted-persistence", "raster-focal-circle-persistence",
-		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence", "raster-disk-pressure"} {
+		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence",
+		"raster-focal-percentiles-persistence", "raster-disk-pressure"} {
 		t.Run(suite, func(t *testing.T) {
 			consumer, err := suitePermissions(suite)
 			if err != nil || !slices.Equal(consumer, ordinary) {

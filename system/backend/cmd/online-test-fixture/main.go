@@ -121,7 +121,8 @@ var sourceInitializerPermissions = []string{
 func rasterHostedSourcePreparation(suite string) bool {
 	switch suite {
 	case "raster-focal-circle-weighted-persistence", "raster-focal-circle-persistence",
-		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence", "raster-disk-pressure":
+		"raster-focal-circle-orthogonal-persistence", "raster-focal-square-seven-persistence",
+		"raster-focal-percentiles-persistence", "raster-disk-pressure":
 		return true
 	default:
 		return false

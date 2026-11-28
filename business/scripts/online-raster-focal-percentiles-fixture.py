@@ -30,6 +30,7 @@ CASES={
  'cross-block.cog.tif':('cross.tif','square_pixels',5,'batch'),
  'invalid.cog.tif':('invalid.tif','square_pixels',3,'batch'),
 }
+TARGETS = tuple(CASES)
 FAILURES=('list_missing','list_null','list_empty','scalar_number','scalar_boolean','scalar_string','scalar_object',
  'item_boolean','item_string','item_null','item_list','item_object','item_low','item_high','duplicate','descending',
  'unused','unused_null','band_zero','band_high','band_boolean','band_alpha','square_size','square_radius',

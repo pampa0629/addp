@@ -68,8 +68,8 @@ CLOCK
   run_logged timeout --kill-after=5 "$remaining" "$@"
 }
 run_business python3 business/scripts/online-raster-focal-percentiles-fixture.py seed
-# Reuse the existing ordinary raster identity and its exact twelve permissions.
-run_business bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-workflow --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
+# The ordinary raster User keeps twelve permissions; a separate User prepares source metadata.
+run_business bash -c 'cd system/backend && go run ./cmd/online-test-fixture --suite raster-focal-percentiles-persistence --wait-protection-owners develop,manager --output "$1"' _ "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
 run_business python3 scripts/test/online-engine-registration.py --descriptor "$ADDP_ONLINE_SECRET_DIR/raster-focal-percentiles-nfs-engine.json" --output "$ENGINE_RESULT_ENV"
 source "$ENGINE_RESULT_ENV"

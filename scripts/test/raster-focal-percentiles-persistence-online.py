@@ -16,6 +16,7 @@ import time
 base = importlib.import_module('scripts.test.raster-statistics-percentile-workflow-online')
 fixture = importlib.import_module('business.scripts.online-raster-focal-percentiles-fixture')
 lineage = importlib.import_module('scripts.utils.online_raster_lineage')
+hillshade = importlib.import_module('scripts.test.raster-hillshade-orthogonal-persistence-online')
 def source_edges(client, identifier):
     graph = obj(client.request('GET', f'/api/v1/meta/lineage/graph?subject_kind=data_item&item_id={identifier}&direction=downstream', (200,)).payload, 'source graph')
     if graph.get('truncated') is not False: raise SuiteError('source graph is incomplete')
@@ -24,6 +25,7 @@ def source_edges(client, identifier):
 raster, support, readonly = base.raster, base.support, base.readonly
 obj, array, positive, SuiteError = base.obj, base.array, base.positive, base.SuiteError
 SUITE, FAILURES = fixture.SUITE, fixture.FAILURES
+CLEANUP_RESERVE_SECONDS = 45
 SubmittedLanguageClient, BudgetClient = base.SubmittedLanguageClient, base.BudgetClient
 encoded, immutable, archive_response = base.encoded, base.immutable, base.archive_response
 _LIST=('percentiles必须为非空、严格递增且不重复的0至100有限非布尔数值列表','percentiles must be a nonempty strictly increasing list of distinct finite non-boolean numbers from 0 to 100')
@@ -54,6 +56,12 @@ ENTRY_PARAMETERS = {
     'scalar_string': 'percentiles',
     'unused_null': 'percentiles',
 }
+
+
+class PreparedMetadata(hillshade.ViewshedMetadata):
+    prefix = fixture.PREFIX
+    suite = SUITE
+    fixture = fixture
 
 
 class DiagnosticClient(base.DiagnosticClient):
@@ -193,15 +201,19 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
     if not 0 < started <= time.monotonic():
         raise SuiteError('multi-percentile business start must bind source preparation')
     deadline = started + budget
+    operation_deadline = deadline - CLEANUP_RESERVE_SECONDS
 
     def remaining():
-        left = deadline - time.monotonic()
+        left = operation_deadline - time.monotonic()
         if left <= 0: raise SuiteError('multi-percentile business budget exhausted')
         return left
 
     remaining()
     client = BudgetClient(client, remaining); directory = Path(env['ADDP_ONLINE_ARTIFACT_DIR']); directory.mkdir(parents=True, exist_ok=True); (directory/'focal-percentiles-terminal-responses').mkdir()
-    stages = []; primary = cleanup_error = report = None
+    stages = []
+    primary = report = metadata = None
+    cleanup_errors = []
+    producer_env = {key: value for key, value in env.items() if key != 'ADDP_ONLINE_FIXTURE_SOURCE_ACCESS_TOKEN'}
     def progress(status):
         (directory/'raster-focal-percentiles-progress.json').write_bytes(encoded({'suite': SUITE, 'result': status,
             'budget_ms': 600000, 'elapsed_ms': round((time.monotonic()-started)*1000), 'stages': stages}))
@@ -211,25 +223,31 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
         identity = raster.validate_identity(client, tenant, required_permissions=raster.EDITOR_PERMISSIONS)
         engine = positive(env['ADDP_ONLINE_RASTER_FOCAL_PERCENTILES_NFS_ENGINE_ID'], 'NFS engine')
         scopes = {name: f'addp://engine/{engine}/path/{name}?type=file' for name in fixture.SOURCES}
-        scan = support.wait_for_meta_scan(client, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
-        items = {name: support.find_fixture_item(client, engine, name, 'multi-percentile source') for name in fixture.SOURCES}
+        initializer, source_identity = hillshade.source_scan_client(env, client, identity, remaining)
+        scan = support.wait_for_meta_scan(initializer, engine, time.monotonic()+remaining(), scope={'targets': list(scopes.values())})
+        scanned = raster.wait_execution(initializer, 'meta', scan, remaining())
+        source_scan_identity = base.validate_scan(scanned, scan, None, tenant, int(source_identity['principal_id']), engine)
+        immutable(directory/'meta-source-scan.json', encoded(scanned))
+        hillshade.check_scan_inventory(client, initializer, scan, [])
+        metadata = PreparedMetadata(env, client, engine, identity, scan, remaining,
+                                    grant_remaining=lambda: deadline - time.monotonic())
+        items = {name: metadata.find(name) for name in fixture.SOURCES}
         sources = {name: scopes[name]+f'&item_id={items[name]["id"]}' for name in fixture.SOURCES}
-        before = {name: client.request('GET', f'/api/v1/meta/items/{item["id"]}', (200,)).payload for name, item in items.items()}
+        before = {name: metadata.snapshot(item['id']) for name, item in items.items()}
         immutable(directory/'source-meta-before.json',encoded(before))
-        source_scan_identity = base.validate_scan(raster.wait_execution(client, 'meta', scan, remaining()), scan, None, tenant, int(identity['principal_id']), engine)
         selected = [v for v in array(client.request('GET', '/api/v1/develop/workflow-engines', (200,)).payload, 'runtimes')
                     if v.get('engine_type') == 'geopython_workflow' and v.get('connection_status') == 'online']
         if len(selected) != 1: raise SuiteError('exactly one same-source product Runtime is required')
         runtime = positive(selected[0].get('id'), 'Runtime'); parent = f'addp://engine/{engine}/path/outputs?type=directory'
-        baseline = physical_runner(repository, env, 'oracle', [], remaining()); remaining()
+        baseline = physical_runner(repository, producer_env, 'oracle', [], remaining()); remaining()
         anchor = baseline.get('oracle_sha256'); expected = obj(baseline.get('expectations'), 'independent expectations')
         if set(expected) != set(fixture.CASES) or not isinstance(anchor, str) or not re.fullmatch('[0-9a-f]{64}', anchor): raise SuiteError('sixteen frozen independent expectations required')
-        expected = copy.deepcopy(expected); env['ADDP_ONLINE_RASTER_FOCAL_PERCENTILES_ORACLE_SHA256'] = anchor
+        expected = copy.deepcopy(expected); producer_env['ADDP_ONLINE_RASTER_FOCAL_PERCENTILES_ORACLE_SHA256'] = anchor
         immutable(directory/'raster-focal-percentiles-expectations.json', encoded(expected))
         check_physical(baseline, baseline.get('sources'), {}, anchor, [])
         for name in fixture.SOURCES:
             if type(before[name].get('size_bytes')) is not int or before[name]['size_bytes'] != baseline['sources'][name]['size_bytes']: raise SuiteError('physical/Meta source size differs')
-        if base.scan_ids(client) != [scan]: raise SuiteError('unexpected source initialization scan')
+        hillshade.check_scan_inventory(client, initializer, scan, [])
         physical_calls, full_checks = 1, 0; cases, failures, names, scans, previous = [], [], [], [], {}
         for index, name in enumerate(fixture.CASES, 1):
             stages.append({'case': name, 'status': 'running'}); progress('running')
@@ -237,7 +255,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             identifier = raster.submit(SubmittedLanguageClient(client, language), runtime, dag, execution_timeout=min(180, max(1, int(remaining()))))
             execution = raster.wait_execution(client, 'develop', identifier, remaining()); current(execution, identity, identifier, dag, runtime, language, 'success')
             wanted = expected_lineage(sources, name, target)
-            evidence = lineage.collect(env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
+            evidence = lineage.collect(producer_env, SUITE, identifier, name, wanted, execution, tenant, int(identity['principal_id']), dag, lineage_reader); remaining()
             expectation=artifact_expectation(name)
             facts,output_scan=validate_success(execution,[sources[n]for n in case_inputs(name)],target,'create',expectation,resource_type='file')
             lineage.validate(facts,wanted,public=True)
@@ -249,17 +267,20 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
             if monitor.get('execution_id')!=identifier or 'tenant_id' in monitor or monitor.get('status')!='success'or obj(monitor.get('metadata'),'metadata').get('lineage_facts')!=facts:raise SuiteError('Monitor current output lineage differs')
             archive_response(directory/'focal-percentiles-terminal-responses',f'{index:02}-develop',client.request('GET','/api/v1/develop/executions/'+identifier,(200,)))
             archive_response(directory/'focal-percentiles-terminal-responses',f'{index:02}-monitor',monitor_response)
-            names.append(name);native=physical_runner(repository,env,'verify',names,remaining());remaining()
+            names.append(name);native=physical_runner(repository,producer_env,'verify',names,remaining());remaining()
             check_physical(native,baseline['sources'],previous,anchor,names);previous=copy.deepcopy(native['targets']);physical_calls+=1;full_checks+=len(names)
-            item0=support.find_fixture_item(client,engine,'outputs/'+name,'COG');item=client.request('GET',f'/api/v1/meta/items/{item0["id"]}',(200,)).payload
+            item0 = metadata.find('outputs/'+name, binding={'execution': identifier, 'scan': output_scan, 'locator': target})
+            item = metadata.snapshot(item0['id'])
             validate_target_item(item,expectation,native['targets'][name])
             artifact=obj(obj(execution['metadata'].get('result'),'result').get('final_result'),'artifact');sizes=raster.strict_sizes(artifact,native['targets'][name],item,name)
             immutable(directory/('target-'+name+'-meta-before.json'),encoded(item))
-            cases.append({'name':name,'execution_id':identifier,'target_item_id':item['id'],'target_locator':target,'scan_identity':scan_identity,'size_evidence':sizes,'lineage_evidence':evidence,'physical':native['targets'][name]})
+            cases.append({'name':name,'execution_id':identifier,'target_item_id':item['id'],'target_locator':target,
+                          'automatic_scan_execution_id':output_scan,'scan_identity':scan_identity,
+                          'size_evidence':sizes,'lineage_evidence':evidence,'physical':native['targets'][name]})
             stages[-1]['status'] = 'passed'; progress('running')
         for case in cases:
             case['lineage'] = [raster.wait_lineage(client, items[name]['id'], case['target_item_id'], case['execution_id'], remaining()) for name in case_inputs(case['name'])]
-        if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('unexpected automatic scan inventory')
+        hillshade.check_scan_inventory(client, initializer, scan, scans)
         edges = {name: source_edges(client, item['id']) for name, item in items.items()}
         known_executions = [case['execution_id'] for case in cases]
         for problem in FAILURES:
@@ -272,7 +293,7 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                     raw = base.reject_workflow_parameter(
                         client, runtime, dag, 'focal', parameter, language, min(180, max(1, int(remaining())))
                     )
-                    inventory_reader(env, tenant, known_executions)
+                    inventory_reader(producer_env, tenant, known_executions)
                     remaining()
                     receipt = immutable(directory / f'entry-{problem}-{language}.json', raw)
                     failure.update(rejection_stage='develop_entry', no_execution_created=True,
@@ -282,9 +303,9 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                     known_executions.append(identifier)
                     execution = raster.wait_execution(client, 'develop', identifier, remaining(), expected='failed'); current(execution, identity, identifier, dag, runtime, language, 'failed')
                     if obj(execution.get('error_details'), 'error details').get('category') != 'execution_failed': raise SuiteError('wrong failure category')
-                    failed_identity = failed_reader(env, identifier, tenant, int(identity['principal_id']), dag)
+                    failed_identity = failed_reader(producer_env, identifier, tenant, int(identity['principal_id']), dag)
                     remaining()
-                    diagnostic = diagnostic_runner(repository, env, identifier, problem, language, remaining()); remaining()
+                    diagnostic = diagnostic_runner(repository, producer_env, identifier, problem, language, remaining()); remaining()
                     if diagnostic != {'execution_id': identifier, 'task': 'focal', 'problem': problem, 'language': language, 'exact_cause': MESSAGES[problem][language == 'en'], 'source': 'develop_runtime_log'}: raise SuiteError('wrong exact failure task/cause')
                     archive_response(directory/'focal-percentiles-terminal-responses',f'failed-{problem}-{language}-develop',client.request('GET','/api/v1/develop/executions/'+identifier,(200,)))
                     readonly.no_publication(execution)
@@ -296,42 +317,52 @@ def run_scenario(repository, env, client, physical_runner=fixture_call, diagnost
                     if any(queried.get(key) != execution.get(key) for key in ('error_msg', 'error_details', 'execution_config')): raise SuiteError('query language rewrote stored failure')
                     failure.update(rejection_stage='analysis_node', execution_id=identifier,
                                    diagnostic=diagnostic, internal_execution_identity=failed_identity)
-                if base.scan_ids(client) != sorted([scan, *scans]): raise SuiteError('failed execution added scan')
+                if base.scan_ids(client) != sorted(scans): raise SuiteError('failed execution added scan')
                 if any(source_edges(client, item['id']) != edges[name] for name, item in items.items()): raise SuiteError('failed execution added derived lineage')
-                native = physical_runner(repository, env, 'verify', names, remaining()); remaining(); check_physical(native, baseline['sources'], previous, anchor, names)
+                native = physical_runner(repository, producer_env, 'verify', names, remaining()); remaining(); check_physical(native, baseline['sources'], previous, anchor, names)
                 physical_calls += 1; full_checks += len(names)
                 failures.append(failure)
                 stages[-1]['status'] = 'passed'; progress('running')
-        inventory_reader(env, tenant, known_executions)
+        inventory_reader(producer_env, tenant, known_executions)
+        hillshade.check_scan_inventory(client, initializer, scan, scans)
         remaining()
         if sum(failure['rejection_stage'] == 'develop_entry' for failure in failures) != 24:
             raise SuiteError('exact Develop entry rejection count differs')
         if len(cases) != 16 or len(failures) != 56 or full_checks != 1032 or physical_calls != 73: raise SuiteError('all 16 successes, 56 failures, 1032 COG checks and 73 physical calls required')
         target_metadata_before={case['target_item_id']:json.loads((directory/('target-'+case['name']+'-meta-before.json')).read_bytes())for case in cases}
-        target_metadata_after={identifier:client.request('GET',f'/api/v1/meta/items/{identifier}',(200,)).payload for identifier in target_metadata_before}
+        target_metadata_after={identifier:metadata.snapshot(identifier) for identifier in target_metadata_before}
         immutable(directory/'target-meta-after.json',encoded(target_metadata_after))
         if target_metadata_after != target_metadata_before:raise SuiteError('target metadata changed')
-        source_metadata_after={name:client.request('GET',f'/api/v1/meta/items/{item["id"]}',(200,)).payload for name,item in items.items()}
+        source_metadata_after={name:metadata.snapshot(item['id']) for name,item in items.items()}
         immutable(directory/'source-meta-after.json',encoded(source_metadata_after))
         if source_metadata_after != before:raise SuiteError('source metadata changed')
-        lineage.verify_archive(env, SUITE, cases); remaining()
+        lineage.verify_archive(producer_env, SUITE, cases); remaining()
         immutable(directory/'raster-focal-percentiles-expectations.json', encoded(expected))
         report = {'schema_version': 'addp.'+SUITE+'/v1', 'suite': SUITE, 'result': 'passed', 'identity': identity,
                   'run_id': env['ADDP_ONLINE_TEST_RUN_ID'], 'sources': sources, 'runtime_engine_id': runtime,
                   'source_scan_execution_id': scan, 'source_scan_identity': source_scan_identity,
+                  'source_preparation_identity': source_identity, 'metadata_evidence': metadata.path.name,
                   'cases': cases, 'failed_parameters': failures, 'full_target_checks': full_checks, 'physical_verification_calls': physical_calls,
                   'physical': native, 'archived_cogs': native['archived_cogs'], 'source_unchanged': True,'source_meta_unchanged':True,'target_meta_unchanged':True,'oracle_sha256': anchor}
     except BaseException as error: primary = error
     finally:
+        operation_deadline = deadline - 1
+        if metadata is not None:
+            try:
+                metadata.cleanup()
+            except BaseException as error:
+                cleanup_errors.append('metadata Grant cleanup also failed: ' + type(error).__name__)
         try:
-            removed = physical_runner(repository, env, 'cleanup-oracle', [], remaining()); remaining()
+            removed = physical_runner(repository, producer_env, 'cleanup-oracle', [], remaining()); remaining()
             if removed.get('oracle_cache_removed') is not True: raise SuiteError('oracle cleanup proof missing')
-        except BaseException as error: cleanup_error = error
+        except BaseException as error:
+            detail = str(error) if isinstance(error, SuiteError) else type(error).__name__
+            cleanup_errors.append('oracle cleanup also failed: ' + detail)
     if primary is not None:
         progress('failed')
-        if cleanup_error is not None: raise SuiteError(str(primary)+'; oracle cleanup also failed: '+type(cleanup_error).__name__) from primary
+        if cleanup_errors: raise SuiteError(str(primary)+'; '+'; '.join(cleanup_errors)) from primary
         raise primary
-    if cleanup_error is not None: progress('failed'); raise cleanup_error
+    if cleanup_errors: progress('failed'); raise SuiteError('; '.join(cleanup_errors))
     report['oracle_cache_removed'] = True; remaining(); progress('passed'); remaining()
     report.update(elapsed_ms=round((time.monotonic()-started)*1000), business_budget_ms=600000)
     if report['elapsed_ms'] > 600000: raise SuiteError('business budget exceeded')
