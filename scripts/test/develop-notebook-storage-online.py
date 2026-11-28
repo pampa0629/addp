@@ -82,6 +82,11 @@ def check_bytes(actual, expected, label):
     return {"bytes": len(actual), "sha256": hashlib.sha256(actual).hexdigest()}
 
 
+def cleanup_diagnostic(stage, error, **identity):
+    detail = str(error) if isinstance(error, api.SuiteError) else type(error).__name__
+    return {"stage": stage, **identity, "error": detail}
+
+
 def session_resources(kind, session_id):
     command = ["docker", "ps", "-aq", "--no-trunc"] if kind == "container" else ["docker", "network", "ls", "-q", "--no-trunc"]
     for label in ("addp.jupyter.launcher=addp-runtimes", "addp.jupyter.job=" + session_id):
@@ -354,6 +359,11 @@ def main():
                                  **check_bytes(objects.object_bytes(BUCKET, ttl_key), ttl_saved, "TTL physical save")}
         check_bytes(owner.request("GET", path + "/download", (200,), raw=True), ttl_saved, "TTL HTTP save")
         retained[ttl_key] = ttl_saved
+        sessions.remove((owner, task_id, expired["id"]))
+        peer.request("DELETE", ROOT + f"/notebooks/{created['id']}/sessions/{control['id']}", (204,))
+        sessions.remove((peer, created["id"], control["id"]))
+        wait_cleanup(control_identity, time.monotonic() + 30)
+        report["natural_ttl"]["control_cleanup"] = "passed"
         check_bytes(objects.object_bytes(BUCKET, foreign_key), foreign_bytes, "TTL foreign sentinel")
         report["foreign_sentinel"] = {"task_id": foreign_task["id"], "tenant_id": foreign_tenant, "key": foreign_key,
                                       **check_bytes(objects.object_bytes(BUCKET, foreign_key), foreign_bytes, "foreign sentinel")}
@@ -362,28 +372,31 @@ def main():
         report["result"] = "passed"
     finally:
         # Every cleanup attempt is independent; preserve the original failure and cleanup status.
+        scenario_passed = report["result"] == "passed"
         cleanup_errors = []
         for client, task_id, session_id in reversed(sessions):
             try:
                 client.request("DELETE", ROOT + f"/notebooks/{task_id}/sessions/{session_id}", (204, 404))
-            except Exception:
-                cleanup_errors.append("session")
+            except Exception as error:
+                cleanup_errors.append(cleanup_diagnostic("session", error, task_id=task_id, session_id=session_id))
         for client, task_id in reversed(tasks):
             try:
                 client.request("DELETE", ROOT + f"/notebooks/{task_id}", (200,))
                 client.request("GET", ROOT + f"/notebooks/{task_id}/download", (404,))
-            except Exception:
-                cleanup_errors.append("task")
+            except Exception as error:
+                cleanup_errors.append(cleanup_diagnostic("task", error, task_id=task_id))
         for key, expected in retained.items():
             try:
                 check_bytes(objects.object_bytes(BUCKET, key), expected, "soft delete retained object")
-            except Exception:
-                cleanup_errors.append("retained object")
+            except Exception as error:
+                cleanup_errors.append(cleanup_diagnostic("retained_object", error, key=key))
         report["cleanup"] = "failed" if cleanup_errors else "passed"
         if cleanup_errors:
             report["result"] = "failed"
+            report["cleanup_errors"] = cleanup_errors
         artifact.write_text(json.dumps(report, ensure_ascii=False, indent=2))
-        require(not cleanup_errors, "Notebook HTTP cleanup failed; inspect redacted report")
+        if scenario_passed:
+            require(not cleanup_errors, "Notebook HTTP cleanup failed; inspect redacted report")
     print(json.dumps(report, ensure_ascii=False))
 
 

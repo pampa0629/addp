@@ -110,6 +110,13 @@ class NotebookObserverTest(unittest.TestCase):
             self.assertEqual(scenario.workspace_bytes(identity, "tenant_7/notebooks/notebook.ipynb"), b"notebook bytes")
         read.assert_called_once_with(["docker", "exec", "owned-job", "cat", "--", "/job/files/notebook.ipynb"], timeout=15)
 
+    def test_cleanup_diagnostic_preserves_http_status_but_omits_transport_payload(self):
+        self.assertEqual(scenario.cleanup_diagnostic("session", scenario.api.SuiteError(
+            "DELETE Notebook endpoint returned unexpected HTTP 502"), task_id=7),
+            {"stage": "session", "task_id": 7, "error": "DELETE Notebook endpoint returned unexpected HTTP 502"})
+        self.assertEqual(scenario.cleanup_diagnostic("retained_object", RuntimeError("credential")),
+                         {"stage": "retained_object", "error": "RuntimeError"})
+
     def test_hosted_registration_pins_product_and_preserves_standard_lifecycle(self):
         root = Path(__file__).resolve().parents[2]
         script = (root / "scripts/test/online-hosted-notebook-storage-gate.sh").read_text()
