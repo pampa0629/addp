@@ -33,11 +33,10 @@ source "$HARNESS/scripts/test/hosted-platform-database.sh"
 export ADDP_INFRA_OBJECTSTORE_PROVIDER="$objectstore_provider"
 export ADDP_INFRA_OBJECTSTORE_BINDINGS=develop=notebook-http-documents
 export JUPYTER_SESSION_TTL_SECONDS=300 JUPYTER_API_PORT=8097
-run_logged bash -ec '
-  source "$1/scripts/dev/lifecycle-lock.sh"
-  source "$1/scripts/dev/jupyter-env.sh"
-  ensure_jupyter_python_env "$1"
-' _ "$ROOT_DIR"
+observer_env="$ADDP_ONLINE_SECRET_DIR/notebook-object-observer"
+run_logged python3 -m venv "$observer_env"
+export NOTEBOOK_STORAGE_OBSERVER_PYTHON="$observer_env/bin/python"
+run_logged "$NOTEBOOK_STORAGE_OBSERVER_PYTHON" -m pip install "$ROOT_DIR/common-python[infra-minio]" 'websocket-client==1.9.2'
 export DEVELOP_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 export MANAGER_SERVICE_CLIENT_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 infra_owned=1
@@ -58,5 +57,4 @@ run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -jupyter
 run_daemon_launcher_logged env SKIP_MODTIDY=1 bash scripts/dev/start.sh -develop
 run_logged bash -c 'cd "$1/system/backend" && go run ./cmd/online-test-fixture --suite develop-notebook-storage --output "$2"' _ "$RUNNER_TEMP/notebook-http-identity" "$IDENTITY_ENV"
 source "$IDENTITY_ENV"
-export NOTEBOOK_STORAGE_OBSERVER_PYTHON="$ROOT_DIR/engines/jupyter/venv/bin/python"
 run_logged make -C "$HARNESS" test-online "ONLINE_SUITE=$ONLINE_SUITE"
