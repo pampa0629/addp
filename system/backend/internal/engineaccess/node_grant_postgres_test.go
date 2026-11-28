@@ -220,7 +220,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		if err != nil || observed == nil || !observed.Covered || observed.ExpiresAt == nil || !observed.ExpiresAt.Equal(expiry) {
 			t.Fatalf("node expiry observation: %+v %v", observed, err)
 		}
-		time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+		waitForSourceGrantExpiry(t, ctx, db, expiry)
 		read("metadata_read", future, false)
 		var revoked int64
 		if err := db.Table("system.engine_access_grant_revocations").Where("request_id=?", expired.RequestID).Count(&revoked).Error; err != nil || revoked != 0 {
@@ -387,7 +387,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		}
 		check(nested, true)
 		check(cross, true)
-		time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+		waitForSourceGrantExpiry(t, ctx, db, expiry)
 		check(nested, false)
 		check(future, false)
 		var revocations int64
@@ -583,7 +583,7 @@ func exercisePersistentNodeGrants(t *testing.T, db *gorm.DB, service *Service, a
 		check(bindingFor("nested/scene.tif", false, ""), true)
 		check(nested, true)
 		check(cross, true)
-		time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+		waitForSourceGrantExpiry(t, ctx, db, expiry)
 		check(nested, false)
 		check(future, false)
 		var revocations int64

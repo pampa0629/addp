@@ -31,11 +31,18 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 	actor Actor,
 ) {
 	t.Run("trusted current User credential and precise rules", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
+		// Independent scenarios keep their own deadline. Credential and Grant
+		// expiry cases intentionally wait on the database clock.
+		run := func(name string, scenario func(*testing.T, context.Context)) {
+			t.Run(name, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+				defer cancel()
+				scenario(t, ctx)
+			})
+		}
 		identity := iam.NewRepository(db)
 		repo := NewRepository(db)
-		issue := func(t *testing.T, user userProvenance, ttl time.Duration) (*iam.IssuedBrowserSession, *iam.TokenFamilyService) {
+		issue := func(ctx context.Context, t *testing.T, user userProvenance, ttl time.Duration) (*iam.IssuedBrowserSession, *iam.TokenFamilyService) {
 			t.Helper()
 			tokens, err := iam.NewTokenFamilyService(identity, iam.BrowserSessionConfig{AccessTokenTTL: ttl, ResourceTicketOwners: []string{"manager"}}, nil, nil)
 			if err != nil {
@@ -65,11 +72,13 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 		}
 
 		exerciseDevelopQueryReadGrants(t, db, path, tenantID, adminID, roles, newUser, grant, revoke, actor, func(t *testing.T, user userProvenance) string {
-			session, _ := issue(t, user, time.Minute)
+			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+			defer cancel()
+			session, _ := issue(ctx, t, user, time.Minute)
 			return session.AccessToken
 		})
 
-		t.Run("Transfer field recommendation current User grants and withdrawal", func(t *testing.T) {
+		run("Transfer field recommendation current User grants and withdrawal", func(t *testing.T, ctx context.Context) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 			user, _ := newUser(t, time.Hour)
 			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.transfer_field_recommendation", Name: "Transfer field recommendation fixture", PermissionKeys: []string{"transfer.task.create"}, ActorPrincipalID: adminID})
@@ -79,7 +88,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err = roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Transfer field recommendation fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
 			engine, err := repo.engine(ctx, tenantID, int64(path.EngineID), false)
 			if err != nil {
@@ -125,10 +134,10 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			expiry := now.Add(time.Second)
 			grant(t, "user", user.PrincipalID, &expiry)
 			check(nil)
-			time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+			waitForSourceGrantExpiry(t, ctx, db, expiry)
 			check(commonapi.ErrForbidden)
 		})
-		t.Run("Develop workflow result current User grants and withdrawal", func(t *testing.T) {
+		run("Develop workflow result current User grants and withdrawal", func(t *testing.T, ctx context.Context) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 			user, _ := newUser(t, time.Hour)
 			role, err := roles.CreateRole(ctx, iam.CreateTenantRoleInput{TenantID: tenantID, RoleKey: "custom.workflow_result", Name: "Workflow result fixture", PermissionKeys: []string{"develop.task.read", "develop.data_read.execute"}, ActorPrincipalID: adminID})
@@ -138,7 +147,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err = roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Workflow result fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
 			check := func(want error) {
 				t.Helper()
@@ -157,7 +166,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			revoke(t, id)
 			check(commonapi.ErrForbidden)
 		})
-		t.Run("refresh scope uses current function precise grants and withdrawal", func(t *testing.T) {
+		run("refresh scope uses current function precise grants and withdrawal", func(t *testing.T, ctx context.Context) {
 			user, _ := newUser(t, time.Hour)
 			query := shared.MetadataRefreshQuery{Kind: "node", Target: engineplugin.TabularNamespacePath(path.EngineID, "schema", path.Segments[1].Name)}
 			sourceID := grant(t, "user", user.PrincipalID, nil)
@@ -172,7 +181,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				}
 				return &authorizationfacts.NodeIdentity{TenantID: tenant, Target: q.Target, Exists: true}, nil
 			}))
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			if result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); result != nil || !errors.Is(err, commonapi.ErrForbidden) || ownerCalls != 0 {
 				t.Fatalf("missing scan function result=%+v calls=%d err=%v", result, ownerCalls, err)
 			}
@@ -183,7 +192,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Explicit refresh fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			session, _ = issue(t, user, time.Minute)
+			session, _ = issue(ctx, t, user, time.Minute)
 			result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query)
 			if err != nil || result == nil || result.Validate() != nil || len(result.Ranges) != 1 || result.Ranges[0].Node != nil || result.Ranges[0].Item == nil {
 				t.Fatalf("precise grants became a parent scan: %+v %v", result, err)
@@ -208,16 +217,16 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); err != nil {
 				t.Fatal(err)
 			}
-			time.Sleep(time.Until(expiry) + 20*time.Millisecond)
+			waitForSourceGrantExpiry(t, ctx, db, expiry)
 			if result, err := service.GetMetadataRefreshScope(ctx, session.AccessToken, query); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("expired scope reused %+v %v", result, err)
 			}
 		})
-		t.Run("metadata candidates use current User and no source details", func(t *testing.T) {
+		run("metadata candidates use current User and no source details", func(t *testing.T, ctx context.Context) {
 			other := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_metadata")
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, other}})
 			user, _ := newUser(t, time.Hour)
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			request := shared.SourceMetadataCheckRequest{Targets: []engineplugin.EngineCatalogPath{path, other}}
 			if result, err := service.CheckMetaMetadataRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("missing metadata function: %+v %v", result, err)
@@ -229,7 +238,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Metadata observation fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			session, _ = issue(t, user, time.Minute)
+			session, _ = issue(ctx, t, user, time.Minute)
 			delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
 			if err != nil {
 				t.Fatal(err)
@@ -279,7 +288,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("ticket became metadata credential: %+v %v", result, err)
 			}
 		})
-		t.Run("Manager search uses current source rules and exact delegation", func(t *testing.T) {
+		run("Manager search uses current source rules and exact delegation", func(t *testing.T, ctx context.Context) {
 			other := engineplugin.TabularItemPath(path.EngineID, "schema", "public", "ungranted_search")
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, other}})
 			configureSearchObservationFixture(t, service)
@@ -291,7 +300,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Manager search fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
 			if err != nil {
 				t.Fatal(err)
@@ -444,10 +453,10 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				}
 			}
 		})
-		t.Run("lineage uses only its function and current data rules", func(t *testing.T) {
+		run("lineage uses only its function and current data rules", func(t *testing.T, ctx context.Context) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path}})
 			user, _ := newUser(t, time.Hour)
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			request := shared.SourceMetadataCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
 			if result, err := service.CheckMetaLineageRead(ctx, session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("missing function: %+v %v", result, err)
@@ -459,7 +468,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			if _, err := roles.CreateAssignments(ctx, iam.CreateTenantRoleAssignmentsInput{TenantID: tenantID, MembershipID: user.MembershipID, RoleIDs: []int64{role.ID}, ActorPrincipalID: adminID, Reason: "Lineage observation fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			session, _ = issue(t, user, time.Minute)
+			session, _ = issue(ctx, t, user, time.Minute)
 			check := func(visible bool) {
 				t.Helper()
 				result, err := service.CheckMetaLineageRead(ctx, session.AccessToken, request)
@@ -476,7 +485,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			revoke(t, id)
 			check(false)
 		})
-		t.Run("formal preview consumer intersects function permission and source rules", func(t *testing.T) {
+		run("formal preview consumer intersects function permission and source rules", func(t *testing.T, ctx context.Context) {
 			service := NewService(repo, nil).WithAuthorizationFactsReader(testMetaFacts{paths: []engineplugin.EngineCatalogPath{path, engineplugin.TabularItemPath(path.EngineID, "schema", "public", "formal_preview_ungranted_D")}})
 			checkPGPreview := func(ctx context.Context, credential string, request SourceReadCheckRequest) (*SourceReadCheck, error) {
 				return managerPGTestCheck(t, service, ctx, tenantID, credential, request.Targets, true)
@@ -487,7 +496,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			request := SourceReadCheckRequest{Targets: []engineplugin.EngineCatalogPath{path}}
 			user, _ := newUser(t, time.Hour)
 			grantID := grant(t, "user", user.PrincipalID, nil)
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			if result, err := checkPGPreview(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("Grant without function Permission accepted: %+v %v", result, err)
 			}
@@ -509,7 +518,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				return &assignments[0]
 			}
 			assignment := assign(user)
-			session, _ = issue(t, user, time.Minute)
+			session, _ = issue(ctx, t, user, time.Minute)
 			delegation, err := iam.NewDelegationService(identity, systemauthorization.ToolAuthorizationCatalog{}, iam.DelegationServiceConfig{})
 			if err != nil {
 				t.Fatal(err)
@@ -614,7 +623,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 						if change == "credential expiry" {
 							ttl = 350 * time.Millisecond
 						}
-						readerSession, readerTokens := issue(t, readerUser, ttl)
+						readerSession, readerTokens := issue(ctx, t, readerUser, ttl)
 						want := error(nil)
 						switch change {
 						case "grant withdrawal":
@@ -727,14 +736,14 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 					t.Fatalf("old authorization credential accepted=%+v %v", result, err)
 				}
 			}
-			session, _ = issue(t, user, time.Minute)
+			session, _ = issue(ctx, t, user, time.Minute)
 			checkProfile(session.AccessToken, request.Targets, commonapi.ErrForbidden)
 			if result, err := checkPGPreview(authenticatedManagerReadRequest(ctx, service, session.AccessToken), session.AccessToken, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
 				t.Fatalf("revoked function Permission accepted=%+v %v", result, err)
 			}
 			ungranted, _ := newUser(t, time.Hour)
 			assign(ungranted)
-			session, _ = issue(t, ungranted, time.Minute)
+			session, _ = issue(ctx, t, ungranted, time.Minute)
 			checkProfile(session.AccessToken, request.Targets, commonapi.ErrForbidden)
 			for _, credential := range []string{session.AccessToken, delegate(session)} {
 				if result, err := checkPGPreview(authenticatedManagerReadRequest(ctx, service, credential), credential, request); result != nil || !errors.Is(err, commonapi.ErrForbidden) {
@@ -744,7 +753,7 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			familyUser, _ := newUser(t, time.Hour)
 			assign(familyUser)
 			grant(t, "user", familyUser.PrincipalID, nil)
-			familySession, tokens := issue(t, familyUser, time.Minute)
+			familySession, tokens := issue(ctx, t, familyUser, time.Minute)
 			familyDelegate := delegate(familySession)
 			if _, err := checkPGPreview(authenticatedManagerReadRequest(ctx, service, familyDelegate), familyDelegate, request); err != nil {
 				t.Fatal(err)
@@ -761,10 +770,10 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 			checkProfile(familySession.AccessToken, request.Targets, commonapi.ErrUnauthorized)
 		})
-		t.Run("identity derived only from credential and no observation writes", func(t *testing.T) {
+		run("identity derived only from credential and no observation writes", func(t *testing.T, ctx context.Context) {
 			user, _ := newUser(t, time.Hour)
 			grant(t, "user", user.PrincipalID, nil)
-			session, tokens := issue(t, user, time.Minute)
+			session, tokens := issue(ctx, t, user, time.Minute)
 			var before, after int64
 			if err := db.Table("system.audit_logs").Count(&before).Error; err != nil {
 				t.Fatal(err)
@@ -811,9 +820,9 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("revoked Family accepted=%+v %v", result, err)
 			}
 		})
-		t.Run("credential and rules use one committed read only snapshot", func(t *testing.T) {
+		run("credential and rules use one committed read only snapshot", func(t *testing.T, ctx context.Context) {
 			user, _ := newUser(t, time.Hour)
-			session, _ := issue(t, user, time.Minute)
+			session, _ := issue(ctx, t, user, time.Minute)
 			callback := "test:source-credential-snapshot"
 			called := false
 			if err := db.Callback().Row().Before("gorm:row").Register(callback, func(tx *gorm.DB) {
@@ -849,10 +858,10 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 				t.Fatalf("later committed Grant=%+v %v", result, err)
 			}
 		})
-		t.Run("database wall clock expires credential after IAM projection", func(t *testing.T) {
+		run("database wall clock expires credential after IAM projection", func(t *testing.T, ctx context.Context) {
 			user, _ := newUser(t, time.Hour)
 			grant(t, "user", user.PrincipalID, nil)
-			session, _ := issue(t, user, 350*time.Millisecond)
+			session, _ := issue(ctx, t, user, 350*time.Millisecond)
 			callback := "test:source-credential-expiry"
 			called := false
 			if err := db.Callback().Row().Before("gorm:row").Register(callback, func(tx *gorm.DB) {
@@ -874,6 +883,15 @@ func exerciseSourceReadCredentials(t *testing.T, db *gorm.DB, path engineplugin.
 			}
 		})
 	})
+}
+
+// Expiry is decided by PostgreSQL, which can run on a different clock
+// from the Go test process.
+func waitForSourceGrantExpiry(t *testing.T, ctx context.Context, db *gorm.DB, expiry time.Time) {
+	t.Helper()
+	if err := db.WithContext(ctx).Exec("SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM (?::timestamptz - clock_timestamp()))) + 0.02)", expiry).Error; err != nil {
+		t.Fatalf("wait for source Grant expiry: %v", err)
+	}
 }
 
 func managerPGTestBindings(t *testing.T, paths []engineplugin.EngineCatalogPath) []authorizationfacts.Binding {

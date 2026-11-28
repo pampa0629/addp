@@ -292,7 +292,11 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 					t.Fatal(err)
 				}
 				check(false, first)
-				expiry := time.Now().UTC().Add(time.Second)
+				now, err := NewRepository(db).wallClock(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				expiry := now.Add(time.Second)
 				input.RequestID, input.ExpiryMode, input.ExpiresAt = uuid.New(), shared.SharingExpiryAtTime, &expiry
 				temporary, err := prepareIndependentGrant(input)
 				if err != nil {
@@ -302,7 +306,7 @@ func exerciseDevelopQueryReadGrants(t *testing.T, db *gorm.DB, path plugin.Engin
 					t.Fatal(err)
 				}
 				check(true, first)
-				time.Sleep(time.Until(expiry))
+				waitForSourceGrantExpiry(t, ctx, db, expiry)
 				check(false, first)
 			})
 		}
