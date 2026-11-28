@@ -121,9 +121,11 @@
 
 ## 邻域多百分位独立保存验收
 
-**身份与计时。** 隔离准备账号仅负责当轮指定 NFS 源首扫，以及指定源和经本次执行、扫描确认的成果的限时 `metadata_read`。普通执行账号保持原 12 项权限。600 秒从源样例生成前起算，涵盖身份与引擎准备、首次期望、执行、全部物理复读和预期缓存清理，预留末尾 45 秒逐笔撤销并核不可见。首跑待验。[共同准入](Manager与空间成果.md#独立持久化专项公共前提)
+**身份与计时。** 隔离准备账号仅负责当轮指定 NFS 源首扫，以及指定源和经本次执行、扫描确认的成果的限时 `metadata_read`。普通执行账号保持原 12 项权限。600 秒从源样例生成前起算，涵盖身份与引擎准备、首次期望、执行、全部物理复读和预期缓存清理，预留末尾 45 秒逐笔撤销并核不可见。[共同准入](Manager与空间成果.md#独立持久化专项公共前提)
 
-独立**固定门禁。** `93ebd9ad1` 的自然 [Execution Runner](https://github.com/pampa0629/addp/actions/runs/46037538744/job/140636644248)实际通过登记 160 项、共享准备 42 项、多百分位 18 项及隔离身份 Go 验证。`e712ad3c6` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/46035947142/job/140631267165)预检与标准检查通过，同提交 [Linux GeoPython GDAL](https://github.com/pampa0629/addp/actions/runs/46035947142/job/140631267133)执行标准全量，22,120 项通过、141 条警告、2,530.75 秒，NetCDF 专项另有 109 项通过。[低运行时长 Runner 失败](https://github.com/pampa0629/addp/actions/runs/46035947142/job/140631267210)原件保留。
+独立**首跑失败。** `49b96485e` 环境就绪、隔离身份初始化和 NFS 引擎登记通过，止于血缘观察器准备。原日志第 7,208 行记录准备失败。以固定脚本和首跑 Run ID 复现观察器对 `raster-` 前缀的期望不一致，修复后本地接受完整前缀并继续拒绝截短值。本轮在业务入口前退出，0 成功链／0 拒绝／0 全检，归档无 COG、业务血缘或限时 Grant 回执，外层清理零残留。完整矩阵待复验。[固定 Job](https://github.com/pampa0629/addp/actions/runs/46087185770/job/140799404676) · [官方原始归档](https://github.com/pampa0629/addp/actions/runs/46087185770/artifacts/15240835815)，ZIP SHA-256 `94efec0c7693f5a5a8dcfc8276b28b38a794499d06d5ca1325566dffc5e12c87`。
+
+**固定门禁。** `93ebd9ad1` 的自然 [Execution Runner](https://github.com/pampa0629/addp/actions/runs/46037538744/job/140636644248)实际通过登记 160 项、共享准备 42 项、多百分位 18 项及隔离身份 Go 验证。`e712ad3c6` 的 [Platform consistency](https://github.com/pampa0629/addp/actions/runs/46035947142/job/140631267165)预检与标准检查通过，同提交 [Linux GeoPython GDAL](https://github.com/pampa0629/addp/actions/runs/46035947142/job/140631267133)执行标准全量，22,120 项通过、141 条警告、2,530.75 秒，NetCDF 专项另有 109 项通过。[低运行时长 Runner 失败](https://github.com/pampa0629/addp/actions/runs/46035947142/job/140631267210)原件保留。
 
 手工 `raster-focal-percentiles-persistence`；`make test-raster-focal-percentiles-online-runner`。准备、成果核验与清理按[共同要求](#邻域与-idw-专项共同要求)。 Runtime保持4 CPU／2 GiB／无额外swap。
 

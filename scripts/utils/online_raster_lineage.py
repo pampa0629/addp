@@ -101,7 +101,7 @@ def boundary(env):
     run = env.get('ADDP_ONLINE_TEST_RUN_ID', '')
     prefix = suite.removesuffix('-persistence')
     if suite not in (
-        'raster-focal-square-seven-persistence', 'raster-sample-points-persistence',
+        'raster-focal-percentiles-persistence', 'raster-focal-square-seven-persistence', 'raster-sample-points-persistence',
         'raster-sample-points-bilinear-persistence', 'raster-sample-lines-persistence',
     ):
         prefix = prefix.removeprefix('raster-')

@@ -108,8 +108,9 @@ class RasterLineageTest(unittest.TestCase):
             with patch.dict(os.environ,{**self.env,key:value},clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret),self.subTest(key=key),self.assertRaises(m.SuiteError):m.boundary(os.environ)
         with patch.dict(os.environ,self.env,clear=True),patch.object(m.BASE.HOSTED,'deployment_secret',return_value=self.secret):self.assertEqual(m.boundary(os.environ)[1:2],('raster-tpi-persistence',))
 
-    def test_sampling_uses_the_exact_hosted_run_prefix(self):
-        for prefix in ('raster-sample-points', 'raster-sample-points-bilinear', 'raster-sample-lines'):
+    def test_suites_with_full_raster_prefix_require_the_exact_hosted_run(self):
+        for prefix in ('raster-focal-percentiles', 'raster-focal-square-seven',
+                       'raster-sample-points', 'raster-sample-points-bilinear', 'raster-sample-lines'):
             suite = prefix + '-persistence'
             run_id = prefix + '-123-1'
             env = {**self.env, 'ONLINE_SUITE': suite, 'ADDP_ONLINE_TEST_RUN_ID': run_id}
