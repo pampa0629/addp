@@ -103,7 +103,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ADDP_INFRA_REDIS_CONFIG_PASSWORD=${ADDP_INFRA_REDIS_CONFIG_PASSWORD:-}
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_BUCKET=${MINIO_BUCKET:-system}
@@ -176,7 +176,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -221,7 +221,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-meta-backend:${IMAGE_TAG:-latest}
     container_name: meta-backend
     environment:
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -352,7 +352,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-backend:${IMAGE_TAG:-latest}
     container_name: transfer-backend
     environment:
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -450,7 +450,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-bounded-worker:${IMAGE_TAG:-latest}
     # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -616,7 +616,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
     container_name: develop-backend
     environment:
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -702,7 +702,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -842,7 +842,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - REDIS_DB=0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
       - MINIO_USE_SSL=false
@@ -1441,7 +1441,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=graph
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ENDPOINT=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:

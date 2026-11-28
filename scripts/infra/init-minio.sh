@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# ADDP Infrastructure MinIO Initialization
+# ADDP platform object-store initialization
 # 初始化 MinIO buckets（按模块组织）
 # 由 infra-up.sh 自动调用
 
@@ -25,8 +25,11 @@ if [ "$#" -gt 0 ]; then
   COMPOSE_FILE="$2"
 fi
 
-compose_minio() {
-  docker compose -f "$COMPOSE_FILE" "$@"
+compose_store() {
+  docker compose "${COMPOSE_FILES[@]}" "$@"
+}
+store_client() {
+  compose_store exec -T "$objectstore_service" "$objectstore_client" "$@"
 }
 
 # Optional: load env overrides if present
@@ -37,16 +40,19 @@ if [ "${ADDP_INFRA_RESOLVED:-0}" != "1" ] && [ -f ./.env ]; then
   set +a
 fi
 
-# MinIO 连接配置（系统 MinIO）
+# 平台 S3 连接配置
 MINIO_ENDPOINT="${MINIO_API_PORT:-19000}"
 MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-minioadmin}"
 
 # Keep the deployment binding in sync with common/infra/objectstore/bootstrap.OpenObjectArea.
-[[ ${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio} == minio ]] || {
-  echo "Unsupported object store provider: ${ADDP_INFRA_OBJECTSTORE_PROVIDER}" >&2
-  exit 1
-}
+source "$SCRIPT_DIR/platform-objectstore.sh"
+addp_select_objectstore
+if [[ "$COMPOSE_FILE" == docker-compose.infra.yml ]]; then
+  addp_objectstore_compose_files
+else
+  COMPOSE_FILES=(-f "$COMPOSE_FILE")
+fi
 standard_bucket=standard
 develop_bucket=develop
 if [[ -n ${ADDP_INFRA_OBJECTSTORE_BINDINGS:-} ]]; then
@@ -81,26 +87,26 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-# 确认 MinIO 容器正在运行
-if ! compose_minio ps --status running minio >/dev/null 2>&1; then
-  echo -e "${RED}✗ MinIO 容器未运行，无法初始化 buckets${NC}"
+# 确认当前 Compose 项目已启动选定的服务
+if ! compose_store ps --status running "$objectstore_service" >/dev/null 2>&1; then
+  echo -e "${RED}✗ ${objectstore_service} 容器未运行，无法初始化 buckets${NC}"
   echo -e "${YELLOW}  请先执行: bash scripts/infra/up.sh${NC}"
   exit 1
 fi
 
 echo -e "${YELLOW}========================================${NC}"
-echo -e "${YELLOW}MinIO Buckets 初始化（模块化组织）${NC}"
+echo -e "${YELLOW}${objectstore_service} Buckets 初始化（模块化组织）${NC}"
 echo -e "${YELLOW}========================================${NC}"
 echo ""
 
-# 配置 MinIO alias（使用容器内的 mc 命令）
+# 在所选服务内配置部署客户端的连接
 # 注意：容器内部使用 9000 端口
-echo -e "${YELLOW}▶ 配置 MinIO 连接...${NC}"
-if ! compose_minio exec -T minio mc alias set local "http://localhost:9000" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
-  echo -e "${RED}✗ MinIO 连接配置失败${NC}"
+echo -e "${YELLOW}▶ 配置 ${objectstore_service} 连接...${NC}"
+if ! store_client alias set local "http://localhost:9000" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
+  echo -e "${RED}✗ ${objectstore_service} 连接配置失败${NC}"
   exit 1
 fi
-echo -e "  ${GREEN}✓ MinIO 连接成功${NC}"
+echo -e "  ${GREEN}✓ ${objectstore_service} 连接成功${NC}"
 echo ""
 
 # 创建模块化 buckets（幂等操作，已存在不报错）
@@ -121,11 +127,11 @@ for bucket_info in "${BUCKETS[@]}"; do
   IFS=':' read -r bucket_name bucket_desc <<< "$bucket_info"
 
   # 检查 bucket 是否存在
-  if compose_minio exec -T minio mc ls "local/${bucket_name}" >/dev/null 2>&1; then
+  if store_client ls "local/${bucket_name}" >/dev/null 2>&1; then
     echo -e "  ${GREEN}✓ ${bucket_name}${NC} - 已存在"
   else
     echo -e "  ${BLUE}▸ ${bucket_name}${NC} - 创建中..."
-    if compose_minio exec -T minio mc mb "local/${bucket_name}" >/dev/null 2>&1; then
+    if store_client mb "local/${bucket_name}" >/dev/null 2>&1; then
       echo -e "  ${GREEN}✓ ${bucket_name}${NC} - 创建成功"
     else
       echo -e "  ${RED}✗ ${bucket_name}${NC} - 创建失败"
@@ -139,7 +145,7 @@ echo -e "${YELLOW}▶ 设置 Bucket 访问策略...${NC}"
 
 # Document and Notebook buckets remain private, including deployment exceptions.
 for private_bucket in "$standard_bucket" "$develop_bucket"; do
-  if ! compose_minio exec -T minio mc anonymous set private "local/$private_bucket" >/dev/null 2>&1; then
+  if ! store_client anonymous set private "local/$private_bucket" >/dev/null 2>&1; then
     echo "Failed to set private object bucket: $private_bucket" >&2
     exit 1
   fi
@@ -147,7 +153,7 @@ done
 
 # Manager 产物统一通过 Manager API 访问，bucket 保持私有。
 echo -e "  ${BLUE}▸ manager - 设置为私有（预览缓存、瓦片缓存对象通过 Manager API 访问）${NC}"
-if compose_minio exec -T minio mc anonymous set private "local/manager" >/dev/null 2>&1; then
+if store_client anonymous set private "local/manager" >/dev/null 2>&1; then
   echo -e "  ${GREEN}✓ manager - 访问策略设置完成${NC}"
 else
   echo -e "  ${YELLOW}⚠️  manager - 访问策略设置失败（可能已设置）${NC}"
@@ -157,9 +163,14 @@ echo ""
 
 # 设置 manager 桶 temp/ 前缀的 Lifecycle Policy（7天后自动过期删除）
 echo -e "${YELLOW}▶ 配置 manager 桶 Lifecycle Policy（临时文件 7 天后自动清理）...${NC}"
-if compose_minio exec -T minio mc ilm rule add \
+if [[ "$objectstore_service" == rustfs ]]; then
+  expiry_flag=--expiry-days
+else
+  expiry_flag=--expire-days
+fi
+if store_client ilm rule add \
   --prefix "temp/" \
-  --expire-days 7 \
+  "$expiry_flag" 7 \
   "local/manager" >/dev/null 2>&1; then
   echo -e "  ${GREEN}✓ manager:temp/ 的 7 天过期策略设置成功${NC}"
 else
@@ -167,7 +178,7 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}✓ MinIO Buckets 初始化完成${NC}"
+echo -e "${GREEN}✓ ${objectstore_service} Buckets 初始化完成${NC}"
 echo ""
 echo -e "${YELLOW}========================================${NC}"
 echo -e "${YELLOW}Bucket 访问信息${NC}"

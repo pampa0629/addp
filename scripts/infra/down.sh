@@ -58,7 +58,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-COMPOSE_FILES=(-f docker-compose.infra.yml)
+if [[ -z "${ADDP_INFRA_OBJECTSTORE_PROVIDER+x}" && -f .env ]]; then
+  ADDP_INFRA_OBJECTSTORE_PROVIDER=$(source .env && printf '%s' "${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}")
+fi
+source "$SCRIPT_DIR/platform-objectstore.sh"
+addp_select_objectstore
+addp_objectstore_compose_files
 
 compose() {
   TRACE_QUERY_PORT=0 TRACE_OTLP_PORT=0 PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose --profile observability-traces --profile observability-logs --profile observability-metrics "${COMPOSE_FILES[@]}" "$@"

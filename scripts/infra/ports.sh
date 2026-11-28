@@ -30,11 +30,12 @@ addp_infra_port_specs() {
   if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" != mysql ]]; then
     echo 'postgres POSTGRES_PORT 5432 15432 addp-postgres'
   fi
+  local store="${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}"
+  printf '%s MINIO_API_PORT 9000 19000 addp-%s\n' "$store" "$store"
+  printf '%s MINIO_CONSOLE_PORT 9001 19001 addp-%s\n' "$store" "$store"
   cat <<'EOF'
 redis REDIS_PORT 6379 16379 addp-redis
 falkordb FALKORDB_PORT 6379 16479 addp-falkordb
-minio MINIO_API_PORT 9000 19000 addp-minio
-minio MINIO_CONSOLE_PORT 9001 19001 addp-minio
 meilisearch MEILISEARCH_PORT 7700 17700 addp-meilisearch
 redpanda INFRA_KAFKA_PORT 9092 19092 addp-redpanda
 kafka-connect KAFKA_CONNECT_PORT 8083 18083 addp-kafka-connect

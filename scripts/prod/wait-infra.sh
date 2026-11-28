@@ -9,6 +9,8 @@ if [ -f .env ]; then
 fi
 
 # Always use the actual owned container mappings, including port collision resolution.
+source scripts/infra/platform-objectstore.sh
+addp_select_objectstore
 source scripts/infra/ports.sh
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 core_compose() { PROMETHEUS_PORT=0 LOKI_PORT=0 ALLOY_PORT=0 docker compose -f docker-compose.infra.yml "$@"; }
@@ -60,17 +62,17 @@ until [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}
 done
 echo "✓ FalkorDB 已就绪"
 
-echo "等待 MinIO 就绪..."
+echo "等待 ${objectstore_service} 就绪..."
 counter=0
-until curl -f "http://localhost:${MINIO_API_PORT}/minio/health/live" > /dev/null 2>&1; do
+until curl -f "http://localhost:${MINIO_API_PORT}${objectstore_health_path}" > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then
-    echo "错误: MinIO 启动超时"
+    echo "错误: ${objectstore_service} 启动超时"
     exit 1
   fi
 done
-echo "✓ MinIO 已就绪"
+echo "✓ ${objectstore_service} 已就绪"
 
 echo "等待 Meilisearch 就绪..."
 counter=0

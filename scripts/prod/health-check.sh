@@ -5,6 +5,12 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root_dir"
 failed=0
+if [[ -z "${ADDP_INFRA_OBJECTSTORE_PROVIDER+x}" && -f .env ]]; then
+  ADDP_INFRA_OBJECTSTORE_PROVIDER=$(source .env && printf '%s' "${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}")
+fi
+source scripts/infra/platform-objectstore.sh
+addp_select_objectstore
+addp_objectstore_compose_files
 
 compose() {
   local compose_file="$1"
@@ -15,7 +21,9 @@ compose() {
     docker-compose.yml) images=platform ;;
     docker-compose.runtimes.yml) images=runtimes ;;
   esac
-  docker compose -f "$compose_file" -f "dist/compose-release/$images-images.yml" "$@"
+  local files=(-f "$compose_file")
+  if [[ "$images" == infra ]]; then files=("${COMPOSE_FILES[@]}"); fi
+  docker compose "${files[@]}" -f "dist/compose-release/$images-images.yml" "$@"
 }
 
 check_service() {

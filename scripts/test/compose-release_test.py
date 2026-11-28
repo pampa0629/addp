@@ -658,6 +658,9 @@ class RuntimeHealthSelectionTest(unittest.TestCase):
             script = root / "scripts/prod/health-check.sh"
             script.parent.mkdir(parents=True)
             shutil.copyfile(ROOT / "scripts/prod/health-check.sh", script)
+            infra = root / "scripts/infra"
+            infra.mkdir()
+            shutil.copyfile(ROOT / "scripts/infra/platform-objectstore.sh", infra / "platform-objectstore.sh")
             for project, filename in release.COMPOSE_FILES.items():
                 services = "  fixture:\n    image: registry:2\n"
                 if project == "runtimes":

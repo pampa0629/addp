@@ -92,7 +92,8 @@ def selection(env):
     for key, supported in INFRA_PROVIDERS.items():
         configured = env.get(key, supported)
         supported_mysql = key == "ADDP_INFRA_DATABASE_PROVIDER" and configured == "mysql"
-        if configured != supported and not supported_mysql:
+        supported_rustfs = key == "ADDP_INFRA_OBJECTSTORE_PROVIDER" and configured == "rustfs"
+        if configured != supported and not (supported_mysql or supported_rustfs):
             raise ValueError(f"{key}={configured!r} is not supported by the {scope} Compose release")
         values[key] = configured
     return values
@@ -126,6 +127,8 @@ def compose_model(project, env, override=None):
             return {}
         source = "scripts/prod/system-meta-gateway.yml"
     command = ["docker", "compose", "-f", source]
+    if project == "infra" and selection(env)["ADDP_INFRA_OBJECTSTORE_PROVIDER"] == "rustfs":
+        command += ["-f", "scripts/infra/rustfs-platform.yml"]
     if project == "infra" and selection(env)["ADDP_OBSERVABILITY_TRACES_ENABLED"] == "true":
         command += ["-f", "scripts/infra/traces-platform.yml"]
     if override is not None:
@@ -167,6 +170,9 @@ def native_platform(env):
 def input_fingerprints(env):
     fingerprints = compose_inputs()
     capabilities = selection(env)
+    if capabilities["ADDP_INFRA_OBJECTSTORE_PROVIDER"] == "rustfs" and capabilities["ADDP_DEPLOYMENT_SCOPE"] == "full":
+        name = "scripts/infra/rustfs-platform.yml"
+        fingerprints[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
     if capabilities["ADDP_DEPLOYMENT_SCOPE"] == "system-meta-gateway":
         name = "scripts/prod/system-meta-gateway.yml"
         fingerprints[name] = hashlib.sha256((ROOT / name).read_bytes()).hexdigest()

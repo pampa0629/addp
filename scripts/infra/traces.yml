@@ -10,6 +10,7 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: ["/tmp:size=16m,mode=1777"]
     environment:
+      TEMPO_S3_HOST: ${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}:9000
       TEMPO_BUCKET: ${TEMPO_BUCKET:-addp-runtime-traces}
       TEMPO_S3_ACCESS_KEY: ${TEMPO_S3_ACCESS_KEY:-}
       TEMPO_S3_SECRET_KEY: ${TEMPO_S3_SECRET_KEY:-}

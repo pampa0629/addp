@@ -28,6 +28,8 @@ if ! docker compose version >/dev/null 2>&1; then
   echo -e "${RED}✗ docker compose 不可用${NC}"; exit 1
 fi
 
+source "${SCRIPT_DIR}/platform-objectstore.sh"
+addp_select_objectstore
 source "${SCRIPT_DIR}/ports.sh"
 ADDP_INFRA_PORT_SCOPE=core addp_infra_read_actual_ports
 echo -e "${YELLOW}▶ ADDP Infra 容器状态${NC}"
@@ -43,8 +45,8 @@ get_port() {
 }
 
 REDIS_PORT=$(get_port redis 6379 || true)
-MINIO_API_PORT=$(get_port minio 9000 || true)
-MINIO_CONSOLE_PORT=$(get_port minio 9001 || true)
+MINIO_API_PORT=$(get_port "$objectstore_service" 9000 || true)
+MINIO_CONSOLE_PORT=$(get_port "$objectstore_service" 9001 || true)
 KAFKA_PORT=$(get_port redpanda 9092 || true)
 KAFKA_CONNECT_PORT=$(get_port kafka-connect 8083 || true)
 FALKORDB_PORT=$(get_port falkordb 6379 || true)
@@ -79,8 +81,8 @@ else
 fi
 
 # MinIO
-printf "%s" "- MinIO (API:${MINIO_API_PORT}/Console:${MINIO_CONSOLE_PORT}):    "
-if curl -sf "http://localhost:${MINIO_API_PORT}/minio/health/live" >/dev/null 2>&1; then
+printf "%s" "- ${objectstore_service} (API:${MINIO_API_PORT}/Console:${MINIO_CONSOLE_PORT}):    "
+if curl -sf "http://localhost:${MINIO_API_PORT}${objectstore_health_path}" >/dev/null 2>&1; then
   echo -e "${GREEN}Healthy${NC}"
 else
   echo -e "${RED}Unhealthy${NC}"

@@ -17,6 +17,13 @@ SYS_MEILISEARCH=17700
 
 ok=true
 
+# Resolve the platform selection before reading the separate Business environment.
+system_store=${ADDP_INFRA_OBJECTSTORE_PROVIDER:-}
+if [[ -z "$system_store" && -f .env ]]; then
+  system_store=$(source .env && printf '%s' "${ADDP_INFRA_OBJECTSTORE_PROVIDER:-minio}")
+fi
+system_store=${system_store:-minio}
+
 # Read business .env if present
 if [ -f business/.env ]; then
   set -a; source business/.env; set +a
@@ -56,15 +63,15 @@ report_system_port() {
 report_system_port PostgreSQL addp-postgres 5432 "$SYS_PG"
 report_system_port Redis addp-redis 6379 "$SYS_REDIS"
 report_system_port FalkorDB addp-falkordb 6379 16479
-report_system_port 'MinIO API' addp-minio 9000 "$SYS_MINIO_API"
-report_system_port 'MinIO Console' addp-minio 9001 "$SYS_MINIO_CONSOLE"
+report_system_port "$system_store API" "addp-$system_store" 9000 "$SYS_MINIO_API"
+report_system_port "$system_store Console" "addp-$system_store" 9001 "$SYS_MINIO_CONSOLE"
 report_system_port Meilisearch addp-meilisearch 7700 "$SYS_MEILISEARCH"
 report_system_port 'Infra Kafka' addp-redpanda 9092 19092
 report_system_port 'Kafka Connect' addp-kafka-connect 8083 18083
 
 echo ""
 echo "Runtime containers (if any):"
-docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'minio|postgres' || echo "  (none)"
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E 'minio|rustfs|postgres' || echo "  (none)"
 
 echo ""
 if [ "$ok" = true ]; then

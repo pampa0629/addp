@@ -216,6 +216,7 @@ TEST_DIR=$(mktemp -d)
 trap 'result=$?; if [[ $result != 0 && -f "$TEST_DIR/online.log" ]]; then cat "$TEST_DIR/online.log" >&2; fi; rm -rf "$TEST_DIR"' EXIT
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/repo/scripts/infra"
 cp "${SCRIPT_DIR}/../infra/down.sh" "$TEST_DIR/repo/scripts/infra/down.sh"
+cp "${SCRIPT_DIR}/../infra/platform-objectstore.sh" "$TEST_DIR/repo/scripts/infra/platform-objectstore.sh"
 cp "${SCRIPT_DIR}/../infra/metrics-sources.py" "$TEST_DIR/repo/scripts/infra/metrics-sources.py"
 cp -R "${SCRIPT_DIR}/../infra/postgres-observation" "$TEST_DIR/repo/scripts/infra/"
 cp "${SCRIPT_DIR}/../infra/cdc-metrics.py" "$TEST_DIR/repo/scripts/infra/cdc-metrics.py"

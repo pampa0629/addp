@@ -22,7 +22,7 @@ def resolve_bucket(area, raw):
 
 
 def open_object_area(area) -> BoundArea:
-    if os.environ.get("ADDP_INFRA_OBJECTSTORE_PROVIDER", "minio") != "minio":
+    if os.environ.get("ADDP_INFRA_OBJECTSTORE_PROVIDER", "minio") not in {"minio", "rustfs"}:
         raise ValueError("unsupported platform object provider")
     bucket = resolve_bucket(area, os.environ.get("ADDP_INFRA_OBJECTSTORE_BINDINGS", ""))
     from .minio import bind

@@ -18,7 +18,7 @@ func OpenObjectArea(ctx context.Context, area string) (objectstore.Area, error) 
 	if area != objectstore.Standard && area != objectstore.Manager && area != objectstore.Develop {
 		return nil, fmt.Errorf("unsupported platform object area %q", area)
 	}
-	if provider := config.GetEnv("ADDP_INFRA_OBJECTSTORE_PROVIDER", "minio"); provider != "minio" {
+	if provider := config.GetEnv("ADDP_INFRA_OBJECTSTORE_PROVIDER", "minio"); provider != "minio" && provider != "rustfs" {
 		return nil, fmt.Errorf("unsupported platform object store provider %q", provider)
 	}
 	bucket, err := resolveBucket(area, os.Getenv("ADDP_INFRA_OBJECTSTORE_BINDINGS"))

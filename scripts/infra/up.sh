@@ -18,7 +18,7 @@ cd "${PROJECT_ROOT}"
 COMPOSE_FILES=(-f docker-compose.infra.yml)
 TRACE_CONFIG_READY=false
 BUILD_REPOSITORY_POSTGRES_IMAGE=false
-CORE_SERVICES=(redis falkordb minio meilisearch redpanda redpanda-init kafka-connect)
+CORE_SERVICES=(redis falkordb meilisearch redpanda redpanda-init kafka-connect)
 METRICS_ONLY=false
 case "$#:${1-}" in
   0:) ;;
@@ -100,7 +100,7 @@ reconcile_metrics() {
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}ADDP Infrastructure Up${NC}"
-echo -e "${BLUE}(PostgreSQL/Redis/FalkorDB/MinIO/Meilisearch/Redpanda/Kafka Connect)${NC}"
+echo -e "${BLUE}(PostgreSQL/Redis/FalkorDB/S3/Meilisearch/Redpanda/Kafka Connect)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -116,6 +116,11 @@ if [[ "$METRICS_ONLY" == true ]]; then
 else
   addp_prepare_observability_env "$RUNTIME_ENV_FILE"
 fi
+
+source "$SCRIPT_DIR/platform-objectstore.sh"
+addp_select_objectstore
+addp_objectstore_compose_files
+CORE_SERVICES+=("$objectstore_service")
 
 if [[ "$METRICS_ONLY" == true ]]; then
   if addp_metrics_enabled; then
@@ -156,6 +161,15 @@ if sys.argv[3] != f'{owner.st_uid}:{owner.st_gid}':
 PYLOGDIR
 
 require_docker
+# Reopening an installation with a different provider would attach an empty volume.
+other_store=minio
+if [[ "$objectstore_service" == minio ]]; then other_store=rustfs; fi
+existing_volume=$(docker volume ls -q --filter label=com.docker.compose.project=addp-infra \
+  --filter "label=com.docker.compose.volume=${other_store}_data")
+if [[ -n "$existing_volume" ]]; then
+  echo "已有 $other_store 对象数据卷与部署选型 $objectstore_service 不一致，请核对目标部署。" >&2
+  exit 1
+fi
 if [[ "${ADDP_ONLINE_HOST:-0}" != 1 || -n "${ADDP_RELEASE_MANIFEST:-}" ]]; then
   source "$PROJECT_ROOT/scripts/infra/platform-database.sh"
   addp_select_managed_database "$PROJECT_ROOT"
@@ -242,7 +256,7 @@ if [[ "${ADDP_INFRA_DATABASE_PROVIDER:-postgres}" == postgres ]]; then
   echo "  PostgreSQL: ${POSTGRES_PORT}"
 fi
 echo "  Redis: ${REDIS_PORT}  FalkorDB: ${FALKORDB_PORT}"
-echo "  MinIO: ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}  Meilisearch: ${MEILISEARCH_PORT}"
+echo "  ${objectstore_service}: ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}  Meilisearch: ${MEILISEARCH_PORT}"
 echo "  Infra Kafka: ${INFRA_KAFKA_PORT}  Kafka Connect: ${KAFKA_CONNECT_PORT}"
 echo ""
 
@@ -296,10 +310,10 @@ echo -e "${YELLOW}▶ 检查服务运行状态...${NC}"
 # Check if services are already running
 RUNNING_SERVICES=$(compose ps --status running --format "{{.Service}}" 2>/dev/null || true)
 
-if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|falkordb|minio|meilisearch|redpanda|kafka-connect"; then
+if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|falkordb|minio|rustfs|meilisearch|redpanda|kafka-connect"; then
   echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
   echo "  运行中的服务:"
-  for svc in postgres redis manager-search-redis falkordb minio meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner runtime-log-observer; do
+  for svc in postgres redis manager-search-redis falkordb "$objectstore_service" meilisearch redpanda kafka-connect loki alloy runtime-log-api runtime-log-pruner runtime-log-observer; do
     if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
       echo -e "    ${GREEN}✓ $svc${NC}"
     fi
@@ -375,22 +389,22 @@ for i in $(seq 1 ${max_wait}); do
   if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ FalkorDB 等待超时${NC}"; exit 1; fi
 done
 
-# MinIO
-printf "%s" "- MinIO      "
+# Platform object store
+printf "%s" "- ${objectstore_service}      "
 for i in $(seq 1 ${max_wait}); do
-  if curl -sf "http://localhost:${MINIO_API_PORT}/minio/health/live" >/dev/null 2>&1; then
+  if curl -sf "http://localhost:${MINIO_API_PORT}${objectstore_health_path}" >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
   sleep 1; printf "%s" "."
-  if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ MinIO 等待超时${NC}"; exit 1; fi
+  if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ ${objectstore_service} 等待超时${NC}"; exit 1; fi
 done
 
-# Initialize MinIO buckets
+# Prepare the selected object store
 if [[ "${SKIP_MINIO_INIT:-0}" != "1" ]]; then
   bash "${SCRIPT_DIR}/init-minio.sh"
 else
-  echo -e "${YELLOW}▶ 跳过 MinIO buckets 初始化（SKIP_MINIO_INIT=1）${NC}"
+  echo -e "${YELLOW}▶ 跳过 ${objectstore_service} 桶初始化（SKIP_MINIO_INIT=1）${NC}"
 fi
 
 # Meilisearch
@@ -474,8 +488,8 @@ else
 fi
 echo "  - Redis:       localhost:${REDIS_PORT}"
 echo "  - FalkorDB:    127.0.0.1:${FALKORDB_PORT}  Ontology 私有 Infra"
-echo "  - MinIO API:   http://localhost:${MINIO_API_PORT}"
-echo "  - MinIO Console:http://localhost:${MINIO_CONSOLE_PORT}"
+echo "  - ${objectstore_service} API:   http://localhost:${MINIO_API_PORT}"
+echo "  - ${objectstore_service} Console:http://localhost:${MINIO_CONSOLE_PORT}"
 echo "  - Meilisearch: http://localhost:${MEILISEARCH_PORT}"
 echo "  - Infra Kafka: localhost:${INFRA_KAFKA_PORT}  Redpanda / SASL_PLAINTEXT/SCRAM-SHA-256"
 echo "  - Kafka Connect:http://localhost:${KAFKA_CONNECT_PORT}  内部控制面"

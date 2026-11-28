@@ -1,0 +1,36 @@
+services:
+  minio: !reset null
+  rustfs:
+    image: rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74
+    container_name: addp-rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: ${MINIO_ROOT_USER:?platform object store access key required}
+      RUSTFS_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?platform object store secret key required}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${MINIO_API_PORT:-19000}:9000"
+      - "${INFRA_BIND_HOST:-0.0.0.0}:${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes: [rustfs_data:/data]
+    networks: [addp-network, runtime-log-backend, trace-backend]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "3", "http://127.0.0.1:9000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+  loki:
+    environment:
+      LOKI_S3_ENDPOINT: ${LOKI_S3_ENDPOINT:-http://rustfs:9000}
+  runtime-log-store-init:
+    depends_on: !override {rustfs: {condition: service_healthy}}
+    environment:
+      LOKI_S3_ENDPOINT: http://rustfs:9000
+  trace-store-init:
+    depends_on: !override {rustfs: {condition: service_healthy}}
+    environment:
+      TEMPO_S3_ENDPOINT: http://rustfs:9000
+volumes:
+  rustfs_data:
+  minio_data: !reset null
