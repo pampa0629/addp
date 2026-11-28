@@ -47,8 +47,22 @@ class RustFSDeploymentTest(unittest.TestCase):
 set -eu
 case "$1 $2" in
     'compose --env-file')
-        test "${8-} ${9-} ${10-}" = 'config --format json'
-        exec "$COMPOSE_DOCKER" compose --env-file /dev/null --file "$5" --profile rustfs config --format json
+        test "${5##*/}|${7##*/}|${8-} ${9-} ${10-} ${11-}" = 'docker-compose.infra.yml|rustfs-platform.yml|config --format json rustfs'
+        exec "$COMPOSE_DOCKER" "$@"
+        ;;
+    'compose version') ;;
+    'compose -f')
+        test "${COMPOSE_PROJECT_NAME:?}" = "$RUSTFS_T2_PROJECT"
+        test "${3##*/}" = compose.json
+        case "$4" in
+            ps) test "$5 $6 $7" = '--status running rustfs' ;;
+            exec)
+                test "$5 $6 $7" = '-T rustfs rc'
+                if [ "$8 $9" = 'ls local/project-a-standard-docs' ]; then
+                    printf 'selected RustFS bucket observed\n' > "$STATE.init"
+                fi ;;
+            *) exit 2 ;;
+        esac
         ;;
     'compose --project-name')
         case "$6" in
@@ -109,6 +123,7 @@ printf -- '--- PASS: %s (0.00s)\n' "$contract"
             run = subprocess.run(['bash', str(ROOT/'scripts/test/common-rustfs-gate.sh')],
                                  env=env, capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 0, run.stdout+run.stderr)
+            self.assertEqual((root/'state.init').read_text(), 'selected RustFS bucket observed\n')
             service = json.loads((root/'state.compose.json').read_text())['services']['rustfs']
             self.assertEqual(service['environment']['RUSTFS_OBS_LOGGER_LEVEL'], 'warn,rustfs::app::object::get=debug')
             self.assertEqual(service['environment']['RUSTFS_OBS_LOG_STDOUT_ENABLED'], 'true')

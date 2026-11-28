@@ -513,6 +513,22 @@ class RuntimeSelectionTest(unittest.TestCase):
         self.assertIn("spark-workflow-engine", mysql["runtimes"])
         self.assertIn("jupyter-launcher", mysql["runtimes"])
 
+    def test_full_rustfs_release_replaces_minio_and_tracks_its_deployment_input(self):
+        common_env = dict(os.environ, ADDP_DEPLOYMENT_SCOPE="full", ADDP_DEPLOYMENT_MODULES="",
+                          ADDP_INFRA_DATABASE_PROVIDER="postgres", ADDP_SUPERMAP_WORKFLOW_ENABLED="false",
+                          ADDP_OBSERVABILITY_LOGS_ENABLED="false", ADDP_OBSERVABILITY_TRACES_ENABLED="false",
+                          REDIS_PASSWORD="fixture", INFRA_FALKORDB_PASSWORD="fixture",
+                          MINIO_ROOT_USER="fixture", MINIO_ROOT_PASSWORD="fixture-password")
+        env = {provider: release.release_environment(dict(common_env, ADDP_INFRA_OBJECTSTORE_PROVIDER=provider),
+                                                      "fixture", "registry.invalid", "linux/amd64")
+               for provider in ("minio", "rustfs")}
+        models = {provider: release.compose_model("infra", provider_env) for provider, provider_env in env.items()}
+        self.assertEqual(set(models["rustfs"]), set(models["minio"]) - {"minio"} | {"rustfs"})
+        self.assertRegex(models["rustfs"]["rustfs"]["image"], r"^rustfs/rustfs:[^@]+@sha256:[0-9a-f]{64}$")
+        overlay = "scripts/infra/rustfs-platform.yml"
+        self.assertNotIn(overlay, release.input_fingerprints(env["minio"]))
+        self.assertIn(overlay, release.input_fingerprints(env["rustfs"]))
+
     def test_scoped_database_modules_match_installer_and_runtime_services(self):
         base = {"console", "nginx", "gateway", "system-backend", "meta-backend", "meta-worker", "meta-frontend"}
         entry = (ROOT / "scripts/test/compose-mysql-platform-online.sh").read_text()

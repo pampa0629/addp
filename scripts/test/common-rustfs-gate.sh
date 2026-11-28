@@ -2,9 +2,9 @@
 # ADDP_T2_SERVICES=postgres
 # ADDP_T2_REQUIRED_ENV=ADDP_TEST_POSTGRES_PORT,ADDP_TEST_POSTGRES_PASSWORD
 # ADDP_T2_OWNED_SERVICES=rustfs
-# ADDP_T2_COMPOSE_FILE=business/docker-compose.yml
-# ADDP_T2_INPUT_FILES=business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/infra/objectstore/ common/exportartifact/ standard/backend/internal/service/document_service_integration_test.go common-python/ engines/jupyter/interactive_sessions.py engines/jupyter/execution_container.py common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
-# disposable RustFS: reuse Business image/config, own every resource and remove it.
+# ADDP_T2_COMPOSE_FILE=scripts/infra/rustfs-platform.yml
+# ADDP_T2_INPUT_FILES=.env.example docker-compose.infra.yml scripts/infra/rustfs-platform.yml scripts/infra/platform-objectstore.sh scripts/infra/init-minio.sh business/docker-compose.yml business/scripts/rustfs.sh business/.env.example common/execution/ common/client/ transfer/backend/internal/planner/ transfer/backend/internal/executor/ transfer/backend/internal/service/ transfer/backend/internal/repository/ common/infra/objectstore/ common/exportartifact/ standard/backend/internal/service/document_service_integration_test.go common-python/ engines/jupyter/interactive_sessions.py engines/jupyter/execution_container.py common/engine/plugins/rustfs/ common/engine/plugins/objectstore/ common/engine/plugins/s3/ common/engine/plugins/builtin/ common/dataitem/authorizationfacts/ common-frontend/basic/src/utils/engineApprovalInitialization.mjs meta/backend/internal/scanruntime/ meta/backend/internal/service/ manager/backend/internal/preview/ manager/backend/internal/api/ manager/backend/internal/service/storage_model_read.go system/backend/internal/service/ system/backend/internal/engineaccess/ system/backend/internal/migration/
+# Start a disposable RustFS using the deployed service definition and isolated resources.
 set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 SOURCE_ROOT=$ROOT_DIR
@@ -40,6 +40,7 @@ chmod 700 "$WORK_DIR"
 export RUSTFS_T2_PROJECT="addp-rustfs-t2-${PPID}-$$"
 export RUSTFS_ACCESS_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(10))')"
 export RUSTFS_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+export MINIO_ROOT_USER="$RUSTFS_ACCESS_KEY" MINIO_ROOT_PASSWORD="$RUSTFS_SECRET_KEY" INFRA_BIND_HOST=127.0.0.1
 compose() { docker compose --project-name "$RUSTFS_T2_PROJECT" --file "$WORK_DIR/compose.json" "$@"; }
 cleanup() {
     local status=$?
@@ -59,13 +60,14 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-docker compose --env-file /dev/null --file "$SOURCE_ROOT/business/docker-compose.yml" --profile rustfs config --format json > "$WORK_DIR/business.json"
+docker compose --env-file "$SOURCE_ROOT/.env.example" --file "$SOURCE_ROOT/docker-compose.infra.yml" \
+    --file "$SOURCE_ROOT/scripts/infra/rustfs-platform.yml" config --format json rustfs > "$WORK_DIR/platform.json"
 python3 - "$WORK_DIR" <<'PY'
 import json, sys
 from pathlib import Path
 work = Path(sys.argv[1])
-service = json.loads((work/'business.json').read_text())['services']['rustfs']
-for key in ('container_name', 'profiles', 'networks'):
+service = json.loads((work/'platform.json').read_text())['services']['rustfs']
+for key in ('container_name', 'networks'):
     service.pop(key, None)
 service['restart'] = 'no'
 service['environment']['RUSTFS_OBS_LOGGER_LEVEL'] = 'warn,rustfs::app::object::get=debug'
@@ -100,17 +102,21 @@ if [ "$test_group" = platform-object-area ]; then
     exit 0
 fi
 
+export ADDP_INFRA_OBJECTSTORE_PROVIDER=rustfs MINIO_USE_SSL=false
+export MINIO_ENDPOINT="$ADDP_RUSTFS_TEST_ENDPOINT"
+export ADDP_INFRA_OBJECTSTORE_BINDINGS='standard=project-a-standard-docs,develop=notebook-exception'
+ADDP_INFRA_RESOLVED=1 COMPOSE_PROJECT_NAME="$RUSTFS_T2_PROJECT" \
+    bash "$SOURCE_ROOT/scripts/infra/init-minio.sh" --compose-file "$WORK_DIR/compose.json"
+
 if [ "$test_group" = platform-notebook ]; then
     python3 -m venv "$WORK_DIR/notebook-python"
     export NOTEBOOK_STORAGE_PYTHON="$WORK_DIR/notebook-python/bin/python"
     "$NOTEBOOK_STORAGE_PYTHON" -m pip install "$SOURCE_ROOT/common-python[infra-minio]"
     export NOTEBOOK_STORAGE_PROBE="$SOURCE_ROOT/common-python/tests/notebook_storage_probe.py"
-    export NOTEBOOK_STORAGE_TEST_PROVIDER=rustfs ADDP_NOTEBOOK_OBJECT_INTEGRATION=1
-    export ADDP_INFRA_OBJECTSTORE_PROVIDER=minio MINIO_USE_SSL=false
-    export MINIO_ENDPOINT="$ADDP_RUSTFS_TEST_ENDPOINT"
-    export MINIO_ROOT_USER="$ADDP_RUSTFS_TEST_ACCESS_KEY" MINIO_ROOT_PASSWORD="$ADDP_RUSTFS_TEST_SECRET_KEY"
+    export ADDP_NOTEBOOK_OBJECT_INTEGRATION=1
     (cd "$SOURCE_ROOT/common" && GOWORK=off go test ./infra/objectstore/bootstrap \
         -run '^TestNotebookObjectsAcrossLanguagesAgainstS3$' -count=1 -timeout=120s -v) | tee "$WORK_DIR/notebook.log"
+    if grep -q -- '--- SKIP:' "$WORK_DIR/notebook.log"; then exit 1; fi
     grep -q '^--- PASS: TestNotebookObjectsAcrossLanguagesAgainstS3 ' "$WORK_DIR/notebook.log"
     exit 0
 fi
@@ -133,10 +139,7 @@ if [ "$test_group" = all ] || [ "$test_group" = platform-export ]; then
     export MANAGER_POSTGRES_TEST_DSN="$STANDARD_POSTGRES_TEST_DSN"
     export MANAGER_OBJECT_TEST_ENDPOINT="$ADDP_RUSTFS_TEST_ENDPOINT"
     export MANAGER_OBJECT_TEST_USER="$RUSTFS_ACCESS_KEY" MANAGER_OBJECT_TEST_PASSWORD="$RUSTFS_SECRET_KEY"
-    export ADDP_INFRA_OBJECTSTORE_PROVIDER=minio ADDP_INFRA_OBJECTSTORE_BINDINGS= MINIO_USE_SSL=false
-    export MINIO_ENDPOINT="$MANAGER_OBJECT_TEST_ENDPOINT" MINIO_ROOT_USER="$RUSTFS_ACCESS_KEY" MINIO_ROOT_PASSWORD="$RUSTFS_SECRET_KEY"
-    # The byte contract uses the deployed S3 client with an isolated RustFS endpoint.
-    (cd "$SOURCE_ROOT/common" && GOWORK=off go test -p 1 ./infra/objectstore/bootstrap ./exportartifact \
+    (cd "$SOURCE_ROOT/common" && ADDP_INFRA_OBJECTSTORE_BINDINGS= GOWORK=off go test -p 1 ./infra/objectstore/bootstrap ./exportartifact \
         -run '^Test(ManagerObjectArea|ExportArea)AgainstRustFS$' -count=1 -timeout=90s -v) | tee "$WORK_DIR/export.log"
     for name in TestManagerObjectAreaAgainstRustFS TestExportAreaAgainstRustFS/manager TestExportAreaAgainstRustFS/develop TestExportAreaAgainstRustFS/shapefile_zip; do
         grep -q -- "--- PASS: $name " "$WORK_DIR/export.log"
@@ -149,6 +152,7 @@ fi
     STANDARD_S3_TEST_SECRET_KEY="$ADDP_RUSTFS_TEST_SECRET_KEY" \
     GOWORK=off go test ./internal/service -run '^TestDocumentFileLifecycleAgainstPostgresAndS3$' -count=1 -timeout=90s -v) \
     | tee "$WORK_DIR/standard.log"
+if grep -q -- '--- SKIP:' "$WORK_DIR/standard.log"; then exit 1; fi
 grep -q '^--- PASS: TestDocumentFileLifecycleAgainstPostgresAndS3 ' "$WORK_DIR/standard.log"
 if [ "$test_group" = platform-standard ]; then
     exit 0

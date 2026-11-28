@@ -6,15 +6,17 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from minio import Minio
+from minio.error import S3Error
 from addp_common.infra.objectstore.bootstrap import open_object_area
 
 phase = sys.argv[1]
 key = "tenant_7/notebooks/跨语言 % key.ipynb"
 client = Minio(os.environ["MINIO_ENDPOINT"],access_key=os.environ["MINIO_ROOT_USER"],secret_key=os.environ["MINIO_ROOT_PASSWORD"],secure=False)
 if phase == "prepare":
+    assert client.bucket_exists("notebook-exception"), "deployment did not create the bound Notebook bucket"
+    if not client.bucket_exists("develop"):
+        client.make_bucket("develop")
     for bucket, data in (("develop",b'{"cells":[],"metadata":{"origin":"default"},"nbformat":4,"nbformat_minor":5}'),("notebook-exception",b'{"cells":[],"metadata":{"origin":"exception"},"nbformat":4,"nbformat_minor":5}')):
-        if not client.bucket_exists(bucket):
-            client.make_bucket(bucket)
         client.put_object(bucket,key,io.BytesIO(data),len(data))
     from urllib.request import urlopen
     from urllib.error import HTTPError
@@ -64,5 +66,15 @@ elif phase in {"save", "save-failure"}:
         manager.shutdown()
     with area.open(key) as stream:
         assert stream.read() == before
+elif phase == "cleanup":
+    for bucket in ("develop", "notebook-exception"):
+        if client.bucket_exists(bucket):
+            client.remove_object(bucket, key)
+            try:
+                client.stat_object(bucket, key)
+            except S3Error as exc:
+                assert exc.code == "NoSuchKey"
+            else:
+                raise AssertionError(f"Notebook fixture object remains in {bucket}")
 else:
     raise ValueError("unknown probe phase")

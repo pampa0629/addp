@@ -119,7 +119,7 @@ READONLY
     "$NOTEBOOK_STORAGE_PYTHON" -m pip install -e "$SOURCE_ROOT/common-python[infra-minio]"
     export PYTHONPATH="$SOURCE_ROOT/common-python${PYTHONPATH:+:$PYTHONPATH}"
     export NOTEBOOK_STORAGE_PROBE="$SOURCE_ROOT/common-python/tests/notebook_storage_probe.py"
-    export ADDP_NOTEBOOK_OBJECT_INTEGRATION=1 NOTEBOOK_STORAGE_TEST_PROVIDER=minio
+    export ADDP_NOTEBOOK_OBJECT_INTEGRATION=1
     (cd "$SOURCE_ROOT/common" && go test ./infra/objectstore/bootstrap -run '^TestNotebookObjectsAcrossLanguagesAgainstS3$' -count=1 -v) 2>&1 | tee "$log"
     ! grep -q -- '--- SKIP:' "$log"
     grep -q -- '--- PASS: TestNotebookObjectsAcrossLanguagesAgainstS3 ' "$log"

@@ -175,7 +175,7 @@ on:
         type: boolean
         default: false
       pg_source_commit:
-        description: Product ancestor SHA for PG authorization, Meta scan, Standard HTTP, Infra object or TiDB acceptance
+        description: Product ancestor SHA for PG authorization, Meta scan, Standard and Notebook HTTP, Infra object or TiDB acceptance
         required: false
         type: string
         default: ''
@@ -513,7 +513,7 @@ jobs:
           retention-days: 14
 
   standard-document-storage-hosted:
-    name: Online T4 (standard-document-storage, Linux x86_64)
+    name: Online T4 (standard-document-storage, RustFS, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'standard-document-storage'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
@@ -522,7 +522,8 @@ jobs:
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: standard-document-storage
       STANDARD_HTTP_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
-    steps:
+      ADDP_INFRA_OBJECTSTORE_PROVIDER: rustfs
+    steps: &standard_document_storage_steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -553,19 +554,33 @@ jobs:
           ADDP_ONLINE_ARTIFACT_DIR: ${{ runner.temp }}/addp-online-${{ github.run_id }}
           ADDP_ONLINE_SECRET_DIR: ${{ runner.temp }}/addp-online-secret-${{ github.run_id }}
         run: bash scripts/test/online-hosted-standard-document-gate.sh
-      - name: Publish scan and cleanup evidence
+      - name: Publish document and cleanup evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: standard-document-storage-${{ github.run_id }}
+          name: standard-document-storage-${{ env.ADDP_INFRA_OBJECTSTORE_PROVIDER }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/*.json
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/readiness.txt
           retention-days: 14
 
+  standard-document-storage-minio-hosted:
+    name: Online T4 (standard-document-storage, MinIO, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'standard-document-storage'
+    needs: standard-document-storage-hosted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: standard-document-storage
+      STANDARD_HTTP_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
+      ADDP_INFRA_OBJECTSTORE_PROVIDER: minio
+    steps: *standard_document_storage_steps
+
   develop-notebook-storage-hosted:
-    name: Online T4 (develop-notebook-storage, Linux x86_64)
+    name: Online T4 (develop-notebook-storage, RustFS, Linux x86_64)
     if: github.event_name == 'workflow_dispatch' && inputs.suite == 'develop-notebook-storage'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
@@ -574,7 +589,8 @@ jobs:
       ADDP_ONLINE_HOSTED: "1"
       ONLINE_SUITE_INPUT: develop-notebook-storage
       NOTEBOOK_HTTP_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
-    steps:
+      ADDP_INFRA_OBJECTSTORE_PROVIDER: rustfs
+    steps: &develop_notebook_storage_steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -612,12 +628,26 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: develop-notebook-storage-${{ github.run_id }}
+          name: develop-notebook-storage-${{ env.ADDP_INFRA_OBJECTSTORE_PROVIDER }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/*.json
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/summary.txt
             ${{ runner.temp }}/addp-online-${{ github.run_id }}/readiness.txt
           retention-days: 14
+
+  develop-notebook-storage-minio-hosted:
+    name: Online T4 (develop-notebook-storage, MinIO, Linux x86_64)
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'develop-notebook-storage'
+    needs: develop-notebook-storage-hosted
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      ADDP_ONLINE_HOST: "1"
+      ADDP_ONLINE_HOSTED: "1"
+      ONLINE_SUITE_INPUT: develop-notebook-storage
+      NOTEBOOK_HTTP_SOURCE_COMMIT: ${{ inputs.pg_source_commit }}
+      ADDP_INFRA_OBJECTSTORE_PROVIDER: minio
+    steps: *develop_notebook_storage_steps
 
   infra-redis-core-hosted:
     name: Online T4 (infra-redis-core, Linux x86_64)

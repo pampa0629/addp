@@ -15,7 +15,6 @@ import (
 	"github.com/addp/common/events"
 	"github.com/addp/common/infra/objectstore"
 	"github.com/addp/common/infra/objectstore/bootstrap"
-	"github.com/addp/common/infra/objectstore/s3"
 	"github.com/addp/standard/internal/models"
 	"github.com/addp/standard/internal/repository"
 	"github.com/minio/minio-go/v7"
@@ -30,6 +29,9 @@ func TestDocumentFileLifecycleAgainstPostgresAndS3(t *testing.T) {
 	provider := os.Getenv("ADDP_STANDARD_S3_TEST_PROVIDER")
 	if provider == "" {
 		t.Skip("run the Standard MinIO or RustFS gate")
+	}
+	if got := os.Getenv("ADDP_INFRA_OBJECTSTORE_PROVIDER"); got != provider {
+		t.Fatalf("expected deployed object-store provider %q, got %q", provider, got)
 	}
 	for _, name := range []string{"STANDARD_POSTGRES_TEST_DSN", "STANDARD_S3_TEST_ENDPOINT", "STANDARD_S3_TEST_ACCESS_KEY", "STANDARD_S3_TEST_SECRET_KEY"} {
 		if os.Getenv(name) == "" {
@@ -46,13 +48,8 @@ func TestDocumentFileLifecycleAgainstPostgresAndS3(t *testing.T) {
 			t.Errorf("close PostgreSQL: %v", err)
 		}
 	})
-	config := s3.Config{
-		Endpoint:  os.Getenv("STANDARD_S3_TEST_ENDPOINT"),
-		AccessKey: os.Getenv("STANDARD_S3_TEST_ACCESS_KEY"),
-		SecretKey: os.Getenv("STANDARD_S3_TEST_SECRET_KEY"),
-	}
-	client, err := minio.New(config.Endpoint, &minio.Options{
-		Creds: credentials.NewStaticV4(config.AccessKey, config.SecretKey, ""),
+	client, err := minio.New(os.Getenv("STANDARD_S3_TEST_ENDPOINT"), &minio.Options{
+		Creds: credentials.NewStaticV4(os.Getenv("STANDARD_S3_TEST_ACCESS_KEY"), os.Getenv("STANDARD_S3_TEST_SECRET_KEY"), ""),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,20 +57,7 @@ func TestDocumentFileLifecycleAgainstPostgresAndS3(t *testing.T) {
 
 	bindCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	var area objectstore.Area
-	switch provider {
-	case "minio":
-		// The MinIO gate provisions the remapped bucket through the deployment initializer.
-		area, err = bootstrap.OpenObjectArea(bindCtx, objectstore.Standard)
-	case "rustfs":
-		// The RustFS gate owns the disposable endpoint and its volumes.
-		if err := client.MakeBucket(bindCtx, documentTestBucket, minio.MakeBucketOptions{}); err != nil {
-			t.Fatal(err)
-		}
-		area, err = s3.Bind(bindCtx, objectstore.Standard, documentTestBucket, config)
-	default:
-		t.Fatalf("unsupported Standard object-store test provider %q", provider)
-	}
+	area, err := bootstrap.OpenObjectArea(bindCtx, objectstore.Standard)
 	if err != nil {
 		t.Fatal(err)
 	}

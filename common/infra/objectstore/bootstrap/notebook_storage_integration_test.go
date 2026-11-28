@@ -23,6 +23,7 @@ func TestNotebookObjectsAcrossLanguagesAgainstS3(t *testing.T) {
 			t.Fatalf("Python %s: %v %s", phase, err, output)
 		}
 	}
+	t.Cleanup(func() { probe("cleanup") })
 	probe("prepare")
 	open := func() objectstore.Area {
 		area, err := OpenObjectArea(ctx, objectstore.Develop)
@@ -55,11 +56,10 @@ func TestNotebookObjectsAcrossLanguagesAgainstS3(t *testing.T) {
 	probe("exchange")
 	read(exception, append([]byte(`{"cells":[], "metadata":{"origin":"Python 文"},"nbformat":4,"nbformat_minor":5}`), '\n'))
 	read(normal, []byte(`{"cells":[],"metadata":{"origin":"default"},"nbformat":4,"nbformat_minor":5}`))
-	if os.Getenv("NOTEBOOK_STORAGE_TEST_PROVIDER") == "rustfs" {
-		probe("save")
-		read(exception, []byte(`{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}`))
-		read(normal, []byte(`{"cells":[],"metadata":{"origin":"default"},"nbformat":4,"nbformat_minor":5}`))
-	} else {
+	probe("save")
+	read(exception, []byte(`{"cells":[],"metadata":{"edited":true},"nbformat":4,"nbformat_minor":5}`))
+	read(normal, []byte(`{"cells":[],"metadata":{"origin":"default"},"nbformat":4,"nbformat_minor":5}`))
+	if os.Getenv("NOTEBOOK_READONLY_USER") != "" {
 		probe("save-failure")
 	}
 }

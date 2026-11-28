@@ -4,6 +4,7 @@ from email.parser import BytesParser
 from importlib import import_module
 from io import StringIO
 import os
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -49,7 +50,8 @@ class ObserverTest(unittest.TestCase):
             return instances[0].content
         env = {"ADDP_ONLINE_TEST_TENANT_ID": "2", "ADDP_ONLINE_STANDARD_FOREIGN_TENANT_ID": "3",
                "ADDP_ONLINE_TEST_USER_ACCESS_TOKEN": "owner", "ADDP_ONLINE_STANDARD_FOREIGN_TOKEN": "foreign",
-               "GATEWAY_URL": "http://localhost", "STANDARD_HTTP_SOURCE_COMMIT": "a"*40, "GITHUB_SHA": "b"*40}
+               "GATEWAY_URL": "http://localhost", "STANDARD_HTTP_SOURCE_COMMIT": "a"*40, "GITHUB_SHA": "b"*40,
+               "ADDP_INFRA_OBJECTSTORE_PROVIDER": "rustfs"}
         with patch.dict(os.environ, env), patch.object(scenario.api, "GatewayClient", side_effect=client),              patch.object(scenario.api, "validate_user_identity", return_value={}) as identity,              patch.object(scenario, "object_bytes", side_effect=physical),              patch.object(scenario, "absent"), redirect_stdout(StringIO()) as output:
             scenario.main()
             self.assertEqual(identity.call_count, 2)
@@ -60,10 +62,30 @@ class ObserverTest(unittest.TestCase):
         self.assertEqual(report["revision_id"], 12)
         self.assertEqual(len(report["observations"]), 2)
         self.assertEqual(report["cross_tenant_http_status"], 404)
+        self.assertEqual(report["objectstore_provider"], "rustfs")
 
     def test_corrupt_download_fails(self):
         with self.assertRaises(scenario.api.SuiteError):
             self.exercise(corrupt=True)
+
+    def test_only_s3_missing_codes_satisfy_physical_cleanup(self):
+        class S3Error(Exception):
+            def __init__(self, code):
+                self.code = code
+
+        with patch.dict("sys.modules", {"minio.error": SimpleNamespace(S3Error=S3Error)}), \
+                patch.object(scenario, "object_store") as store:
+            stat_object = store.return_value.stat_object
+            for code in ("NoSuchKey", "NoSuchBucket"):
+                stat_object.side_effect = S3Error(code)
+                scenario.absent("bucket", "document")
+            for code in ("AccessDenied", "InternalError"):
+                stat_object.side_effect = S3Error(code)
+                with self.assertRaises(scenario.api.SuiteError):
+                    scenario.absent("bucket", "document")
+            stat_object.side_effect = None
+            with self.assertRaises(scenario.api.SuiteError):
+                scenario.absent("bucket", "document")
 
 
 if __name__ == "__main__":

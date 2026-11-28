@@ -2,8 +2,9 @@
 import hashlib
 import json
 import os
-import subprocess
 import sys
+from functools import cache
+from io import BytesIO
 from pathlib import Path
 from importlib import import_module
 
@@ -16,23 +17,38 @@ def require(condition, message):
         raise api.SuiteError(message)
 
 
+@cache
+def object_store():
+    from minio import Minio
+    from urllib3 import PoolManager, Timeout
+
+    return Minio(os.environ["ADDP_ONLINE_OBJECTSTORE_ENDPOINT"],
+                 access_key=os.environ["MINIO_ROOT_USER"], secret_key=os.environ["MINIO_ROOT_PASSWORD"],
+                 secure=False, http_client=PoolManager(timeout=Timeout(connect=5, read=20), retries=False))
+
+
 def object_bytes(bucket, key):
-    result = subprocess.run(
-        ["docker", "exec", "addp-minio", "mc", "cat", f"local/{bucket}/{key}"],
-        capture_output=True, timeout=20,
-    )
-    require(result.returncode == 0, "physical object read failed")
-    return result.stdout
+    response = object_store().get_object(bucket, key)
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def put_object(bucket, key, content):
+    object_store().put_object(bucket, key, BytesIO(content), len(content))
 
 
 def absent(bucket, key):
-    result = subprocess.run(
-        ["docker", "exec", "addp-minio", "mc", "stat", "--json", f"local/{bucket}/{key}"],
-        capture_output=True, timeout=20,
-    )
-    payload = json.loads(result.stdout.splitlines()[-1])
-    require(result.returncode != 0 and payload["error"]["cause"]["message"] in {"Object does not exist", "The specified bucket does not exist"},
-            "expected physical object to be missing")
+    from minio.error import S3Error
+
+    try:
+        object_store().stat_object(bucket, key)
+    except S3Error as error:
+        require(error.code in {"NoSuchKey", "NoSuchBucket"}, "S3 must report a missing object or bucket")
+        return
+    raise api.SuiteError("expected physical object to be missing")
 
 
 def main():
@@ -58,6 +74,7 @@ def main():
     bucket = "standard-http-documents"
     report = {"suite": "standard-document-storage", "product_sha": os.environ["STANDARD_HTTP_SOURCE_COMMIT"],
               "harness_sha": os.environ["GITHUB_SHA"], "document_id": document_id, "revision_id": revision_id,
+              "objectstore_provider": os.environ["ADDP_INFRA_OBJECTSTORE_PROVIDER"],
               "physical_bucket": bucket, "owner_identity": owner_identity, "foreign_identity": foreign_identity,
               "observations": []}
     try:

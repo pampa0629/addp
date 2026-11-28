@@ -138,12 +138,6 @@ def wait_cleanup(identity, deadline):
         time.sleep(1)
 
 
-def physical_put(bucket, key, content):
-    result = subprocess.run(["docker", "exec", "-i", "addp-minio", "mc", "pipe", f"local/{bucket}/{key}"],
-                            input=content, capture_output=True, timeout=30)
-    require(result.returncode == 0, "physical sentinel upload failed")
-
-
 def kernel_roundtrip(client, session, notebook_name):
     # websocket-client is part of the real Jupyter environment; no HTTP substitute.
     import websocket
@@ -241,11 +235,14 @@ def main():
     engine_id = int(os.environ["ADDP_ONLINE_NOTEBOOK_ENGINE_ID"])
     report = {"schema_version": "addp.online-suite/v1", "suite": "develop-notebook-storage", "result": "failed",
               "product_sha": os.environ["NOTEBOOK_HTTP_SOURCE_COMMIT"], "harness_sha": os.environ["GITHUB_SHA"],
+              "objectstore_provider": os.environ["ADDP_INFRA_OBJECTSTORE_PROVIDER"],
               "physical_bucket": BUCKET, "engine_id": engine_id, "identities": identities, "observations": []}
     report["runtime_rejections"] = control_plane_rejections(tenant)
     tasks, sessions, retained = [], [], {}
     artifact = Path(os.environ["ADDP_ONLINE_ARTIFACT_DIR"]) / "notebook-storage-evidence.json"
     try:
+        # The default bucket is a private fixture sentinel, separate from the deployed binding.
+        objects.object_store().make_bucket("develop")
         foreign_task = foreign.request("POST", ROOT + "/notebooks", (201,), {"name": "storage-foreign-sentinel", "engine_id": engine_id, "kernel": "python3"})["dev_task"]
         tasks.append((foreign, foreign_task["id"]))
         foreign_key = unquote(urlsplit(foreign_task["content"]["notebook_locator"]).path.removeprefix("/develop/"))
@@ -276,7 +273,7 @@ def main():
                 check_bytes(original, initial, "uploaded HTTP")
             initial_physical = check_bytes(objects.object_bytes(BUCKET, key), original, "initial physical")
             sentinel = b"default-bucket-sentinel:" + str(task_id).encode()
-            physical_put("develop", key, sentinel)
+            objects.put_object("develop", key, sentinel)
             check_bytes(peer.request("GET", path + "/download", (200,), raw=True), original, "same tenant shared download")
             foreign.request("GET", path + "/download", (404,))
             foreign.request("POST", path + "/sessions", (404,))
